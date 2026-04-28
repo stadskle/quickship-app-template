@@ -80,17 +80,23 @@ Every helper has a localhost fallback so the same code path runs in dev and prod
 
 If you find yourself writing `import boto3` in a route file, **stop and check whether a helper exists**. The helpers handle local-dev fallbacks, IAM scoping, and platform conventions. Bypassing them creates dev/prod drift.
 
-## Capability env vars
+## Enabling capabilities
 
-Bootstrap fills these into `infra/terraform.tfvars` based on what the operator picked. Use them to know which capabilities are wired in this app:
+Apps start with **all capabilities off** — bootstrap doesn't ask the user upfront because they don't know what they'll need. Your job (Claude) is to enable each capability the *first* time you realize it's needed for the feature being built, by editing `infra/terraform.tfvars` and then running `/deploy`.
 
-| Var (in tfvars) | Lambda env var | When set |
-|---|---|---|
-| `database_enabled` | `DATABASE_URL` | Always (postgres) |
-| `storage_enabled` | `STORAGE_BUCKET` | If S3 was opted in |
-| `dynamodb_tables` | `KV_TABLE_<NAME>` | One env var per table name |
-| `email_enabled` | `EMAIL_SENDER_DOMAIN` | If SES IAM was granted |
-| `ai_models_enabled` | (no env var) | IAM grant only — boto3 Bedrock client just works |
+The platform supports exactly these five capabilities. Don't suggest other AWS services (RDS, ElastiCache, SQS, Step Functions, EventBridge, …) — they require a platform-admin discussion, not something a single app can self-serve.
+
+| Capability | Enable how | Lambda env var | When you need it |
+|---|---|---|---|
+| **Postgres** | `database_enabled = true` in `terraform.tfvars` | `DATABASE_URL` | Any persistent / relational data: users, records, application state. Use the `app.lib.db` helper. |
+| **S3 storage** | `storage_enabled = true` | `STORAGE_BUCKET` | File uploads, generated reports/PDFs/images, archives. Use `app.lib.storage`. |
+| **DynamoDB tables** | `dynamodb_tables = ["sessions", "ratelimits"]` (one entry per logical table) | `KV_TABLE_<UPPER_NAME>` per table | High-throughput key/value lookups with simple schema (sessions, rate limits, idempotency keys). Use `app.lib.kv`. |
+| **SES email** | `email_enabled = true` | `EMAIL_SENDER_DOMAIN` | Sending transactional email (signup confirmations, alerts). Use `app.lib.email`. |
+| **Bedrock AI** | `ai_models_enabled = true` | (no env var; IAM grant only) | LLM calls. Use `app.lib.ai`. |
+
+**Workflow when enabling**: edit `terraform.tfvars`, run `/deploy`. The deploy creates the cloud resources (DB role+database, S3 bucket, etc.) and re-deploys the Lambda with the new env vars. Existing app code doesn't need to change — the helper just starts working in production. Locally, the helper continues using its fallback (postgres in docker-compose, `./uploads/`, SQLite, stderr) until you set the matching env vars in your shell or `docker-compose.yml`.
+
+**If the user asks for something outside this list** — e.g. "use Redis for caching", "set up an SQS queue", "trigger a Lambda from EventBridge", "use RDS instead of Neon" — explain that this isn't part of the quickship platform and point them at the platform admin. Don't try to wire raw AWS services around the platform.
 
 ## Adding a secret
 

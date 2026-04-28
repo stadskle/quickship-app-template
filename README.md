@@ -61,15 +61,13 @@ cd your-app-name
 
 This works the same regardless of where your app will eventually live (GitHub, GitLab, whichever your platform admin set up). You'll handle the destination repo together with Claude on the first `/deploy` — no need to decide right now.
 
-`bootstrap.sh` asks you a handful of questions (AWS account ID and region are auto-detected from your `quickship` profile, so you don't need to know them):
+`bootstrap.sh` asks just two things — everything else (account ID, region, platform modules URL, your developer name) is read from your AWS profile or platform-published SSM:
 - **App name** (defaults to the folder name)
-- **Platform repo URL** — full URL of the modules repo your platform admin set up (e.g. `https://github.com/your-org/quickship-platform` or a GitLab URL)
-- **Platform module ref** — branch or tag to pin to (defaults to `main`)
-- **Allowed users** — comma-separated email addresses or `*@yourcompany.com` wildcards
-- **Capabilities** — does this app need Postgres? S3? AI? Email?
-- **Developers** with AWS debug access (matching `developer` modules in the platform repo)
+- **Allowed users** — comma-separated email addresses or `*@yourcompany.com` wildcards (who can reach the deployed app via Cloudflare Access)
 
-It substitutes your answers throughout the scaffold, deletes itself, and commits as your starting point.
+Capabilities (Postgres, S3, DynamoDB, SES, Bedrock AI) all start **off** — Claude turns them on as you describe what you're building. You don't need to pick anything upfront.
+
+The script substitutes your answers throughout the scaffold, deletes itself, and commits as your starting point.
 
 ### 4. Open in Claude Code
 

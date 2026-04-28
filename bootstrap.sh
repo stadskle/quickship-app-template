@@ -54,25 +54,39 @@ if [[ -z "$aws_region" ]]; then
 fi
 echo "✓ AWS region:  $aws_region (via profile '$aws_profile')"
 
-echo
-echo "Platform modules repo — where the bootstrap, quickship, developer modules live."
-echo "Paste the full URL (any git host: GitHub, GitLab, Bitbucket, self-hosted)."
-echo "  Example: https://github.com/your-org/quickship-platform"
-read -r -p "Platform repo URL: " platform_source_raw
-# Normalize: strip protocol, trailing .git, trailing slash. End up with host/path form.
-platform_source="${platform_source_raw#https://}"
-platform_source="${platform_source#http://}"
-platform_source="${platform_source#git@}"
-platform_source="${platform_source//:/\/}"  # for git@host:owner/repo style
-platform_source="${platform_source%.git}"
-platform_source="${platform_source%/}"
-if [[ -z "$platform_source" || "$platform_source" != *"/"* ]]; then
-  echo "Error: platform repo URL must be a full URL (e.g. https://github.com/owner/repo)." >&2
+# Platform source URL — published to SSM by bootstrap module. No prompt;
+# every app under this platform points at the same modules repo.
+platform_source=$(aws ssm get-parameter --profile "$aws_profile" --region "$aws_region" \
+  --name "/$aws_profile/_platform/source" \
+  --query Parameter.Value --output text 2>/dev/null || true)
+if [[ -z "$platform_source" ]]; then
+  cat <<EOF >&2
+Error: couldn't read /$aws_profile/_platform/source from SSM.
+
+The platform doesn't appear to be bootstrapped yet (or the bootstrap module
+needs an apply to publish this fact). Ask your platform admin to run
+'terraform apply' on the bootstrap module with platform_source set.
+EOF
   exit 1
 fi
+echo "✓ Platform source: $platform_source (via SSM)"
 
 read -r -p "Platform module ref (tag or branch) [main]: " platform_version
 platform_version=${platform_version:-main}
+
+# Auto-detect this developer's name from the IAM user ARN. The convention
+# is <prefix>-developer-<name>; if the caller matches, pre-populate the
+# developers list. Otherwise leave empty (the user can add manually later).
+caller_arn=$(aws sts get-caller-identity --profile "$aws_profile" --query Arn --output text 2>/dev/null || true)
+caller_user=${caller_arn##*/}  # strip everything before last '/'
+if [[ "$caller_user" == "$aws_profile-developer-"* ]]; then
+  developer_name=${caller_user#"$aws_profile-developer-"}
+  developers_json=$(printf '["%s"]' "$developer_name")
+  echo "✓ Developer: $developer_name (auto-detected from IAM user)"
+else
+  developers_json="[]"
+  echo "  (No developer auto-detected. Add names to 'developers' in infra/terraform.tfvars later.)"
+fi
 
 echo
 echo "Who can access this app? Comma-separated list. Each entry is either:"
@@ -91,36 +105,15 @@ items = [p.strip() for p in '''$allowed_principals_raw'''.split(',') if p.strip(
 print(json.dumps(items))
 ")
 
-prompt_bool() {
-  local prompt="$1" default="$2" answer
-  read -r -p "${prompt} [${default}]: " answer
-  answer=${answer:-$default}
-  # macOS ships bash 3.2 which doesn't have ${var,,} — use tr for portability.
-  answer=$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')
-  case "$answer" in
-    y|yes|true) echo "true" ;;
-    *) echo "false" ;;
-  esac
-}
-
-database_enabled=$(prompt_bool "Database (Postgres)? [y/n]" "y")
-storage_enabled=$(prompt_bool "S3 storage? [y/n]" "n")
-email_enabled=$(prompt_bool "SES email? [y/n]" "n")
-ai_models_enabled=$(prompt_bool "Bedrock AI models? [y/n]" "n")
-
-read -r -p "DynamoDB table names (comma-separated, blank for none): " dynamodb_tables_raw
-dynamodb_tables_json=$(python3 -c "
-import json, sys
-items = [t.strip() for t in '''$dynamodb_tables_raw'''.split(',') if t.strip()]
-print(json.dumps(items))
-")
-
-read -r -p "Developer names with access to this app (comma-separated, blank for none): " developers_raw
-developers_json=$(python3 -c "
-import json, sys
-items = [d.strip() for d in '''$developers_raw'''.split(',') if d.strip()]
-print(json.dumps(items))
-")
+# Capabilities default off — Claude turns them on as it learns what the app
+# actually needs (see CLAUDE.md "Enabling capabilities"). No prompts here:
+# the user typing bootstrap.sh hasn't talked to Claude yet and shouldn't
+# have to predict their app's needs upfront.
+database_enabled="false"
+storage_enabled="false"
+email_enabled="false"
+ai_models_enabled="false"
+dynamodb_tables_json="[]"
 
 # ---- substitutions ---------------------------------------------------------
 
