@@ -11,7 +11,9 @@ This page is the **template** — read on if you want to create your own app fro
 
 ### 1. Install the requirements listed below
 
-[Claude Code](https://claude.com/claude-code), [Docker Desktop](https://www.docker.com/products/docker-desktop/), [GitHub CLI](https://cli.github.com/), and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html). Sign in to GitHub once with `gh auth login`.
+[Claude Code](https://claude.com/claude-code), [Docker Desktop](https://www.docker.com/products/docker-desktop/), and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html). Plus `git` (pre-installed on macOS/Linux) and SSH keys set up for whichever host your platform admin uses (GitHub or GitLab).
+
+If your destination is GitHub and you want Claude to be able to create the repo with one command, also install [GitHub CLI](https://cli.github.com/) (`gh`) and run `gh auth login`. For GitLab, create the repo via the web UI when prompted; everything else (`git push`, pipeline triggers) is identical regardless of host.
 
 ### 2. Set up AWS access (one-time)
 
@@ -87,8 +89,9 @@ When you're ready to put your app live, ask Claude `/deploy`. The first deploy c
 
 - **[Claude Code](https://claude.com/claude-code)** — the agent you'll be talking to.
 - **[Docker Desktop](https://www.docker.com/products/docker-desktop/)** — Claude uses it to run the app on your laptop. Just install it; you don't need to learn it.
-- **[GitHub CLI](https://cli.github.com/)** (`gh`) — Claude uses it to push your code and (once CI/CD is wired up) to trigger deploys. Run `gh auth login` once after installing.
-- **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** — Claude uses it to read logs and check what's happening in your deployed app when something looks off. Your platform admin will tell you how to log in (usually `aws sso login`).
+- **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** — Claude uses it to read logs, check pipeline status, and inspect AWS resources when something looks off.
+- **`git`** — pre-installed on macOS and Linux. SSH keys configured for whichever git host your platform admin uses (GitHub or GitLab) so `git push` works.
+- **(Optional, GitHub-only)** [GitHub CLI](https://cli.github.com/) (`gh`) — Claude uses `gh repo create` to make your app's repo on the first deploy. GitLab users create the repo via the web UI when prompted; after that `git push` is identical regardless of host. The pipeline detects pushes via AWS CodeConnections, not via any CLI.
 
 That's it. No Python, no Node, no Terraform setup — Claude has those handled inside Docker.
 
