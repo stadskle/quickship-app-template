@@ -1,0 +1,61 @@
+version: 0.2
+#
+# CodeBuild buildspec. Single project handles BOTH build and deploy
+# (no separate CodeDeploy stage — `aws lambda update-function-code`
+# at the end of post_build is the deploy).
+#
+# Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0 (arm64),
+# matches Lambda Graviton arch so wheels with C extensions
+# (psycopg, cryptography) load correctly when packed into the zip.
+#
+# Env vars injected by the platform's tinyapp module:
+#   LAMBDA_FUNCTION_NAME — target Lambda name
+#   AWS_REGION           — region for the deploy call
+#   PYTHON_RUNTIME       — informational; alignment with `runtime-versions` below
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+      nodejs: 22
+    commands:
+      - echo "Build env Python $(python3 --version) Node $(node --version)"
+
+  pre_build:
+    commands:
+      - echo "Building ${LAMBDA_FUNCTION_NAME} runtime ${PYTHON_RUNTIME}"
+      - mkdir -p build
+
+  build:
+    commands:
+      # Backend dependencies + source. -t installs into build/ so they
+      # land at zip root where Lambda imports from.
+      - pip install --quiet --no-cache-dir -t build/ -r backend/requirements.txt
+      - cp -r backend/app build/
+      - cp backend/handler.py build/
+
+      # Frontend build (skipped gracefully if frontend/ absent — keeps the
+      # template usable for pure-API apps).
+      - |
+        if [ -f frontend/package.json ]; then
+          (cd frontend && npm ci --silent && npm run build)
+          mkdir -p build/static
+          cp -r frontend/dist/* build/static/
+        else
+          echo "No frontend/package.json — skipping frontend build"
+        fi
+
+      # Pack everything at zip root (no leading ./build/ prefix).
+      - (cd build && zip -rq ../app.zip .)
+      - echo "Built $(du -h app.zip | cut -f1) zip"
+
+  post_build:
+    commands:
+      - echo "Deploying to Lambda ${LAMBDA_FUNCTION_NAME}"
+      - aws lambda update-function-code --function-name "${LAMBDA_FUNCTION_NAME}" --zip-file fileb://app.zip --region "${AWS_REGION}" >/dev/null
+      - aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION_NAME}" --region "${AWS_REGION}"
+      - echo "Deploy complete"
+
+artifacts:
+  files:
+    - app.zip

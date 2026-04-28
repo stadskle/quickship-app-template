@@ -1,0 +1,58 @@
+# Local dev environment. `docker compose up` brings everything up:
+#   - postgres on :5432 with the app's database+role pre-created
+#   - backend (FastAPI/uvicorn) on :8000 with hot reload
+#   - frontend (Vite) on :5173 with HMR; /api/* proxies to backend
+#
+# Source code is bind-mounted from host so edits are live without rebuild.
+# node_modules and Postgres data live in named volumes (Docker-native FS,
+# not the host bind mount) so they don't slow down macOS volume mounts.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: __APP_NAME__
+      POSTGRES_USER: __APP_NAME__
+      POSTGRES_PASSWORD: dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "__APP_NAME__"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  backend:
+    build: ./backend
+    working_dir: /app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ~/.aws:/root/.aws:ro # AWS credentials for Bedrock (real, not mocked)
+    environment:
+      DATABASE_URL: postgresql://__APP_NAME__:dev@postgres:5432/__APP_NAME__
+      AWS_REGION: eu-central-1
+      AWS_DEFAULT_REGION: eu-central-1
+      # Capability env vars deliberately NOT set — when missing, helpers
+      # fall back to local equivalents (./uploads/, SQLite, stderr).
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  frontend_node_modules:
