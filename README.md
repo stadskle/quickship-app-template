@@ -15,15 +15,15 @@ This page is the **template** — read on if you want to create your own app fro
 
 ### 2. Create your app from this template
 
-Pick a short name for your app (lowercase, hyphens, e.g. `expense-tracker`), then:
+Pick a short name for your app (lowercase, hyphens, e.g. `expense-tracker`):
 
 ```bash
-gh repo create your-username/your-app-name \
-  --template stadskle/quickship-app-template \
-  --private --clone
+git clone --depth=1 https://github.com/stadskle/quickship-app-template.git your-app-name
 cd your-app-name
 ./bootstrap.sh
 ```
+
+This works the same regardless of where your app will eventually live (GitHub, GitLab, whichever your platform admin set up). You'll handle the destination repo together with Claude on the first `/deploy` — no need to decide right now.
 
 `bootstrap.sh` asks you a handful of questions:
 - **App name** (defaults to the folder name)

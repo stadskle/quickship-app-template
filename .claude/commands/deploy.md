@@ -15,10 +15,12 @@ Deploy this app to the platform's AWS account.
      - `https://github.com/alice/hello-world.git` → `alice/hello-world`
      - `https://github.com/alice/hello-world` → `alice/hello-world`
      - `git@github.com:alice/hello-world.git` → `alice/hello-world`
+     - `git@gitlab.com:alice/hello-world.git` → `alice/hello-world`
      Update `infra/terraform.tfvars` to set `git_repo = "<owner>/<repo>"`.
-   - **If no remote exists**: stop and ask the user to create the GitHub repo first. Suggest:
-     `gh repo create <suggested-name> --source . --private --push`
-     where `<suggested-name>` defaults to the current directory name. Do not run this command yourself unless the user asks — repo creation is their call.
+   - **If no remote exists** (the common case after a fresh `bootstrap.sh`): the user needs to create the destination repo. Ask them which host they want and offer the right command:
+     - **GitHub**: `gh repo create <username>/<app-name> --source . --private --push`. If `gh` isn't authenticated, prompt them to run `gh auth login` first.
+     - **GitLab / other**: have them create an empty repo via the host's web UI (no auto-init / README), then run `git remote add origin <url> && git push -u origin main`.
+     Do not run repo-creation commands yourself unless the user explicitly says go — repo creation is publicly visible and their call to make. Once the remote is configured, re-derive `git_repo` from `git remote get-url origin` and update `terraform.tfvars`.
 
 2. **Verify the AWS profile works**:
    `aws --profile tinyapp sts get-caller-identity`

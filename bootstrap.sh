@@ -146,11 +146,24 @@ fi
 # Self-destruct so the bootstrap step is one-time.
 rm -- "$0"
 
-# Fresh git history rooted at this template instantiation.
+# Fresh git history rooted at this template instantiation. The clone's
+# .git (origin points at the template repo) is discarded — Claude
+# guides the user to set their own remote on the first /deploy.
 rm -rf .git
-git init -q
+git init -q -b main
 git add -A
-git commit -q -m "init: scaffold ${app_name} from quickship-app-template"
+
+if ! git commit -q -m "init: scaffold ${app_name} from quickship-app-template" 2>/dev/null; then
+  cat <<EOF
+⚠️  bootstrap could not commit (git is missing user identity).
+Set it once, globally:
+    git config --global user.name  "Your Name"
+    git config --global user.email "you@example.com"
+Then commit manually:
+    git add -A
+    git commit -m "init: scaffold ${app_name}"
+EOF
+fi
 
 cat <<EOF
 
@@ -158,13 +171,15 @@ cat <<EOF
 
 Next steps:
 
-1. Open ${app_name} in Claude Code. CLAUDE.md and .claude/commands/ are set up.
+1. Open this folder in Claude Code:
+       claude .
 
-2. Run locally to confirm the scaffold works:
+2. Verify the scaffold runs locally (optional):
        docker compose up
 
-3. When you're ready to ship: create a GitHub repo for this app, push,
-   then ask Claude "/deploy". Claude will detect the GitHub URL, fill in
-   git_repo in infra/terraform.tfvars, and run the first deploy.
+3. When you're ready to ship, ask Claude "/deploy". It will walk you
+   through creating your app's repo (GitHub or GitLab — whatever your
+   platform admin set up), pushing the code, and running the first
+   deploy. After that, every git push ships your app automatically.
 
 EOF
