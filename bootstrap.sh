@@ -113,6 +113,7 @@ files=(
   frontend/package.json
   frontend/src/App.tsx
   infra/main.tf
+  infra/providers.tf
   infra/versions.tf
   infra/terraform.tfvars
 )
