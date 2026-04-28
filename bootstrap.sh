@@ -123,6 +123,24 @@ for f in "${files[@]}"; do
   fi
 done
 
+# Strip <!-- TEMPLATE-ONLY:START --> ... <!-- TEMPLATE-ONLY:END --> blocks
+# from the README. These hold the "how to bootstrap from the template"
+# instructions that don't apply once the template has been bootstrapped.
+if [[ -f README.md ]]; then
+  python3 - <<'PY'
+import re, pathlib
+p = pathlib.Path("README.md")
+text = p.read_text()
+text = re.sub(
+    r"<!-- TEMPLATE-ONLY:START -->.*?<!-- TEMPLATE-ONLY:END -->\n*",
+    "",
+    text,
+    flags=re.DOTALL,
+)
+p.write_text(text)
+PY
+fi
+
 # ---- finalise --------------------------------------------------------------
 
 # Self-destruct so the bootstrap step is one-time.
