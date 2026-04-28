@@ -13,7 +13,42 @@ This page is the **template** — read on if you want to create your own app fro
 
 [Claude Code](https://claude.com/claude-code), [Docker Desktop](https://www.docker.com/products/docker-desktop/), [GitHub CLI](https://cli.github.com/), and the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html). Sign in to GitHub once with `gh auth login`.
 
-### 2. Create your app from this template
+### 2. Set up AWS access (one-time)
+
+Before you can create or deploy any app, your machine needs to be able to reach the platform's AWS account. **You only do this once** — once it works, every future app uses the same setup.
+
+**You'll need from your platform admin:**
+- An AWS access key ID + secret (they create these by running the `developer` module on your behalf).
+- An `~/.aws/config` snippet showing the role and MFA setup.
+
+**On your machine:**
+
+1. Save the access key + secret:
+   ```bash
+   aws configure --profile tinyapp-base
+   ```
+   When prompted, paste the access key ID + secret. Region: `eu-central-1` (or whatever your platform admin says). Output format: `json`.
+
+2. Append the snippet your admin gave you to `~/.aws/config`. It looks like:
+   ```ini
+   [profile tinyapp]
+   role_arn = arn:aws:iam::<account-id>:role/tinyapp-developer-<your-name>
+   source_profile = tinyapp-base
+   mfa_serial = arn:aws:iam::<account-id>:mfa/<your-name>
+   region = eu-central-1
+   ```
+
+3. Set up MFA in the AWS Console (your admin will walk you through this, or do it for you): IAM → Users → your user → "Security credentials" → "Multi-factor authentication" → "Assign MFA device" → scan the QR with Authy / 1Password / Google Authenticator. The resulting MFA device ARN goes into `mfa_serial` above.
+
+4. **Verify it works:**
+   ```bash
+   aws sts get-caller-identity --profile tinyapp
+   ```
+   You'll be prompted for your MFA code (one-time per session). On success it prints something ending in `assumed-role/tinyapp-developer-<your-name>/...`. If you see that, you're done — every future `aws ...` command and every `bootstrap.sh` will pick this up automatically.
+
+If anything goes wrong here, ask Claude to help — it can read the AWS CLI's error output and walk you through fixing it.
+
+### 3. Create your app from this template
 
 Pick a short name for your app (lowercase, hyphens, e.g. `expense-tracker`):
 
@@ -25,9 +60,8 @@ cd your-app-name
 
 This works the same regardless of where your app will eventually live (GitHub, GitLab, whichever your platform admin set up). You'll handle the destination repo together with Claude on the first `/deploy` — no need to decide right now.
 
-`bootstrap.sh` asks you a handful of questions:
+`bootstrap.sh` asks you a handful of questions (the AWS account ID is auto-detected from your profile, so you don't need to know it):
 - **App name** (defaults to the folder name)
-- **AWS account ID** for the platform (your platform admin gives you this)
 - **Region** (defaults to `eu-central-1`)
 - **Platform repo + version** (defaults to track `main`)
 - **Allowed users** — comma-separated email addresses or `*@yourcompany.com` wildcards
@@ -36,7 +70,7 @@ This works the same regardless of where your app will eventually live (GitHub, G
 
 It substitutes your answers throughout the scaffold, deletes itself, and commits as your starting point.
 
-### 3. Open in Claude Code
+### 4. Open in Claude Code
 
 ```bash
 claude .
@@ -44,7 +78,7 @@ claude .
 
 Talk to Claude — read the rest of this README to see the kinds of things you can ask. The `.claude/` folder ships with slash commands (`/deploy`, `/local`, `/migrate`, `/route`, `/review`) and a security-reviewer subagent already configured.
 
-### 4. First deploy
+### 5. First deploy
 
 When you're ready to put your app live, ask Claude `/deploy`. The first deploy creates the CI/CD pipeline; after that, every `git push` ships automatically — no manual deploy step needed.
 

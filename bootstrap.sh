@@ -22,11 +22,27 @@ if ! [[ "$app_name" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
   exit 1
 fi
 
-read -r -p "AWS account ID (the platform's account): " aws_account_id
+# Derive AWS account ID from the configured profile (the developer onboarding
+# done by the platform admin set this up). No prompting — this also doubles
+# as a credentials sanity check.
+aws_profile="${AWS_PROFILE:-tinyapp}"
+aws_account_id=$(aws sts get-caller-identity --profile "$aws_profile" --query Account --output text 2>/dev/null || true)
 if ! [[ "$aws_account_id" =~ ^[0-9]{12}$ ]]; then
-  echo "Error: AWS account ID must be 12 digits." >&2
+  cat <<EOF >&2
+Error: couldn't get the AWS account ID via the '$aws_profile' profile.
+
+This usually means AWS credentials aren't set up yet on this machine.
+See the "Set up AWS access" section in the template README — your
+platform admin should have given you an access key and an ~/.aws/config
+snippet. Once configured, this command should work:
+
+    aws sts get-caller-identity --profile $aws_profile
+
+Then re-run ./bootstrap.sh.
+EOF
   exit 1
 fi
+echo "✓ AWS account: $aws_account_id (via profile '$aws_profile')"
 
 read -r -p "AWS region [eu-central-1]: " aws_region
 aws_region=${aws_region:-eu-central-1}
