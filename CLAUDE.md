@@ -129,26 +129,27 @@ Locally, just set the env var (`export STRIPE_API_KEY=sk_test_...` in your shell
 
 ## AWS access for debugging
 
-The platform provisions a per-developer IAM user that can `sts:AssumeRole` into a role with read/operate access to apps the developer is named on. The developer configures it once locally:
+The platform provisions a per-developer IAM user with per-app permissions attached directly. The developer (or you, on their behalf) configures it once locally:
 
 - **Profile name**: `tinyapp` (the platform's `name_prefix`; substitute if your platform uses a different prefix).
 - For `aws ...` commands: use the `--profile tinyapp` flag form (this matches the whitelist in `.claude/settings.json` so common read-only calls run without prompting).
 - For `docker compose up`: use `AWS_PROFILE=tinyapp docker compose up` (or `export AWS_PROFILE=tinyapp` once in your shell). The container reads `AWS_PROFILE` from its environment to pick the right profile from the mounted `~/.aws/config` — a `--profile` flag on the docker side wouldn't reach the backend.
 
-Before running anything else, confirm the profile works:
+If the profile isn't set up yet, run `aws configure --profile tinyapp` and paste the access key + secret the platform admin sent. Region: usually `eu-central-1`. Output: `json`.
+
+Verify it works:
 
 ```bash
 aws --profile tinyapp sts get-caller-identity
 ```
 
-You'll be prompted for an MFA token (one-time per session). Success returns an `Arn:` ending in `assumed-role/tinyapp-developer-<name>/...`. If this fails:
+Success returns an `Arn:` ending in `user/tinyapp-developer-<name>`. If this fails:
 
 | Error | Fix |
 |---|---|
-| `Unable to locate credentials` | Profile not configured. Walk the user through the developer-module onboarding steps (or have the platform admin do it). |
-| `ExpiredToken` / `InvalidClientTokenId` | Session expired. Re-run the same command; it'll re-prompt for MFA. |
-| `AccessDenied` on a specific resource | The user isn't on this app's `developers` list in the platform TF. Tell them to ask the admin to add them. |
-| `AssumeRole failed: not authorized to perform: sts:AssumeRole` | MFA condition failed (wrong code, or `mfa_serial` in `~/.aws/config` is wrong). |
+| `Unable to locate credentials` / `The config profile (tinyapp) could not be found` | Profile not configured. Run `aws configure --profile tinyapp` and paste the keys the admin sent. |
+| `InvalidClientTokenId` | Access key wrong, or rotated. Ask the admin for the current key (or rotate yourself if you're admin). |
+| `AccessDenied` on a specific resource | This user isn't on the app's `developers` list in the platform TF. Have the admin add the name and re-apply. |
 
 ### Common debug recipes
 

@@ -15,38 +15,39 @@ This page is the **template** — read on if you want to create your own app fro
 
 ### 2. Set up AWS access (one-time)
 
-Before you can create or deploy any app, your machine needs to be able to reach the platform's AWS account. **You only do this once** — once it works, every future app uses the same setup.
+Before you can create or deploy any app, your machine needs to be able to reach the platform's AWS account. **You only do this once** — every future app reuses the same setup.
 
 **You'll need from your platform admin:**
-- An AWS access key ID + secret (they create these by running the `developer` module on your behalf).
-- An `~/.aws/config` snippet showing the role and MFA setup.
+- An **access key ID** (looks like `AKIA…`).
+- A **secret access key** (a longer random string).
 
-**On your machine:**
+The admin generates these by running:
+```bash
+aws iam create-access-key --user-name tinyapp-developer-<your-name>
+```
+…and sends the values to you over a secure channel (1Password, Bitwarden Send, Signal). Don't accept them via email or Slack DM.
 
-1. Save the access key + secret:
-   ```bash
-   aws configure --profile tinyapp-base
-   ```
-   When prompted, paste the access key ID + secret. Region: `eu-central-1` (or whatever your platform admin says). Output format: `json`.
+**On your machine, run one command:**
 
-2. Append the snippet your admin gave you to `~/.aws/config`. It looks like:
-   ```ini
-   [profile tinyapp]
-   role_arn = arn:aws:iam::<account-id>:role/tinyapp-developer-<your-name>
-   source_profile = tinyapp-base
-   mfa_serial = arn:aws:iam::<account-id>:mfa/<your-name>
-   region = eu-central-1
-   ```
+```bash
+aws configure --profile tinyapp
+```
 
-3. Set up MFA in the AWS Console (your admin will walk you through this, or do it for you): IAM → Users → your user → "Security credentials" → "Multi-factor authentication" → "Assign MFA device" → scan the QR with Authy / 1Password / Google Authenticator. The resulting MFA device ARN goes into `mfa_serial` above.
+When prompted, paste the values:
+- **AWS Access Key ID**: paste the `AKIA…` value
+- **AWS Secret Access Key**: paste the secret
+- **Default region name**: `eu-central-1` (or whatever your platform runs in)
+- **Default output format**: `json`
 
-4. **Verify it works:**
-   ```bash
-   aws sts get-caller-identity --profile tinyapp
-   ```
-   You'll be prompted for your MFA code (one-time per session). On success it prints something ending in `assumed-role/tinyapp-developer-<your-name>/...`. If you see that, you're done — every future `aws ...` command and every `bootstrap.sh` will pick this up automatically.
+**Verify it works:**
 
-If anything goes wrong here, ask Claude to help — it can read the AWS CLI's error output and walk you through fixing it.
+```bash
+aws sts get-caller-identity --profile tinyapp
+```
+
+You should see output ending in `user/tinyapp-developer-<your-name>`. That's it — every future `aws ...` command and every `bootstrap.sh` picks this up automatically.
+
+If anything fails here, just tell Claude what the error said. It can read the AWS CLI's output and walk you through the fix.
 
 ### 3. Create your app from this template
 
