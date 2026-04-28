@@ -61,9 +61,8 @@ cd your-app-name
 
 This works the same regardless of where your app will eventually live (GitHub, GitLab, whichever your platform admin set up). You'll handle the destination repo together with Claude on the first `/deploy` — no need to decide right now.
 
-`bootstrap.sh` asks you a handful of questions (the AWS account ID is auto-detected from your profile, so you don't need to know it):
+`bootstrap.sh` asks you a handful of questions (AWS account ID and region are auto-detected from your `quickship` profile, so you don't need to know them):
 - **App name** (defaults to the folder name)
-- **Region** (defaults to `eu-central-1`)
 - **Platform repo + version** (defaults to track `main`)
 - **Allowed users** — comma-separated email addresses or `*@yourcompany.com` wildcards
 - **Capabilities** — does this app need Postgres? S3? AI? Email?

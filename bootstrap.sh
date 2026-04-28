@@ -44,8 +44,15 @@ EOF
 fi
 echo "✓ AWS account: $aws_account_id (via profile '$aws_profile')"
 
-read -r -p "AWS region [eu-central-1]: " aws_region
-aws_region=${aws_region:-eu-central-1}
+# Region also derived from the configured profile — same source-of-truth as
+# the account ID. `aws configure get region` reads ~/.aws/config for that
+# profile (which the user set when they ran `aws configure --profile ...`).
+aws_region=$(aws configure get region --profile "$aws_profile" 2>/dev/null || true)
+if [[ -z "$aws_region" ]]; then
+  echo "Error: profile '$aws_profile' has no region set. Run: aws configure set region <region> --profile $aws_profile" >&2
+  exit 1
+fi
+echo "✓ AWS region:  $aws_region (via profile '$aws_profile')"
 
 read -r -p "Platform repo (owner/repo) [your-org/quickship-platform]: " platform_repo
 platform_repo=${platform_repo:-your-org/quickship-platform}

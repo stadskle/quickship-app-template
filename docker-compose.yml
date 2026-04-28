@@ -34,8 +34,8 @@ services:
       - ~/.aws:/root/.aws:ro # AWS credentials for Bedrock (real, not mocked)
     environment:
       DATABASE_URL: postgresql://__APP_NAME__:dev@postgres:5432/__APP_NAME__
-      AWS_REGION: eu-central-1
-      AWS_DEFAULT_REGION: eu-central-1
+      AWS_REGION: __AWS_REGION__
+      AWS_DEFAULT_REGION: __AWS_REGION__
       # Capability env vars deliberately NOT set — when missing, helpers
       # fall back to local equivalents (./uploads/, SQLite, stderr).
     depends_on:
