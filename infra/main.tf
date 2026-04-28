@@ -3,7 +3,7 @@
 # pipeline artifact bucket) from SSM internally; this consumer just sets
 # per-app config + capability flags + git repo location.
 module "app" {
-  source = "git::https://github.com/__PLATFORM_REPO__//modules/quickship?ref=__PLATFORM_VERSION__"
+  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=__PLATFORM_VERSION__"
 
   providers = {
     aws           = aws

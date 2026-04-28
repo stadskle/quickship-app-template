@@ -54,14 +54,35 @@ if [[ -z "$aws_region" ]]; then
 fi
 echo "✓ AWS region:  $aws_region (via profile '$aws_profile')"
 
-read -r -p "Platform repo (owner/repo) [your-org/quickship-platform]: " platform_repo
-platform_repo=${platform_repo:-your-org/quickship-platform}
+echo
+echo "Platform modules repo — where the bootstrap, quickship, developer modules live."
+echo "Paste the full URL (any git host: GitHub, GitLab, Bitbucket, self-hosted)."
+echo "  Example: https://github.com/your-org/quickship-platform"
+read -r -p "Platform repo URL: " platform_source_raw
+# Normalize: strip protocol, trailing .git, trailing slash. End up with host/path form.
+platform_source="${platform_source_raw#https://}"
+platform_source="${platform_source#http://}"
+platform_source="${platform_source#git@}"
+platform_source="${platform_source//:/\/}"  # for git@host:owner/repo style
+platform_source="${platform_source%.git}"
+platform_source="${platform_source%/}"
+if [[ -z "$platform_source" || "$platform_source" != *"/"* ]]; then
+  echo "Error: platform repo URL must be a full URL (e.g. https://github.com/owner/repo)." >&2
+  exit 1
+fi
 
 read -r -p "Platform module ref (tag or branch) [main]: " platform_version
 platform_version=${platform_version:-main}
 
-read -r -p "Allowed principals (comma-separated emails / *@domain) [*@${platform_repo%%/*}.com]: " allowed_principals_raw
-allowed_principals_raw=${allowed_principals_raw:-*@${platform_repo%%/*}.com}
+echo
+echo "Who can access this app? Comma-separated list. Each entry is either:"
+echo "  - a single email address  (e.g.  alice@example.com)"
+echo "  - everyone at a domain    (e.g.  *@example.com)"
+while true; do
+  read -r -p "Allowed users: " allowed_principals_raw
+  [[ -n "$allowed_principals_raw" ]] && break
+  echo "  At least one entry is required."
+done
 
 # JSON-encode the comma-separated list
 allowed_principals_json=$(python3 -c "
@@ -74,7 +95,9 @@ prompt_bool() {
   local prompt="$1" default="$2" answer
   read -r -p "${prompt} [${default}]: " answer
   answer=${answer:-$default}
-  case "${answer,,}" in
+  # macOS ships bash 3.2 which doesn't have ${var,,} — use tr for portability.
+  answer=$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')
+  case "$answer" in
     y|yes|true) echo "true" ;;
     *) echo "false" ;;
   esac
@@ -115,7 +138,7 @@ substitute() {
   sedi "s|__APP_NAME__|${app_name}|g" "$file"
   sedi "s|__AWS_ACCOUNT_ID__|${aws_account_id}|g" "$file"
   sedi "s|__AWS_REGION__|${aws_region}|g" "$file"
-  sedi "s|__PLATFORM_REPO__|${platform_repo}|g" "$file"
+  sedi "s|__PLATFORM_SOURCE__|${platform_source}|g" "$file"
   sedi "s|__PLATFORM_VERSION__|${platform_version}|g" "$file"
   sedi "s|__ALLOWED_PRINCIPALS__|${allowed_principals_json}|g" "$file"
   sedi "s|__DATABASE_ENABLED__|${database_enabled}|g" "$file"

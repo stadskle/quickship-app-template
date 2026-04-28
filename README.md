@@ -63,7 +63,8 @@ This works the same regardless of where your app will eventually live (GitHub, G
 
 `bootstrap.sh` asks you a handful of questions (AWS account ID and region are auto-detected from your `quickship` profile, so you don't need to know them):
 - **App name** (defaults to the folder name)
-- **Platform repo + version** (defaults to track `main`)
+- **Platform repo URL** — full URL of the modules repo your platform admin set up (e.g. `https://github.com/your-org/quickship-platform` or a GitLab URL)
+- **Platform module ref** — branch or tag to pin to (defaults to `main`)
 - **Allowed users** — comma-separated email addresses or `*@yourcompany.com` wildcards
 - **Capabilities** — does this app need Postgres? S3? AI? Email?
 - **Developers** with AWS debug access (matching `developer` modules in the platform repo)
