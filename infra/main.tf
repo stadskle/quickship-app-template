@@ -1,9 +1,9 @@
-# The app itself. The tinyapp module reads platform facts (WAF ARN, Neon
+# The app itself. The quickship module reads platform facts (WAF ARN, Neon
 # project handles, Bedrock model ARNs, SES sender, CodeConnection ARN,
 # pipeline artifact bucket) from SSM internally; this consumer just sets
 # per-app config + capability flags + git repo location.
 module "app" {
-  source = "git::https://github.com/__PLATFORM_REPO__//modules/tinyapp?ref=__PLATFORM_VERSION__"
+  source = "git::https://github.com/__PLATFORM_REPO__//modules/quickship?ref=__PLATFORM_VERSION__"
 
   providers = {
     aws           = aws

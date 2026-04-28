@@ -30,7 +30,7 @@ provider "aws" {
 # Cloudflare API token comes from the platform-shared SSM placeholder;
 # operator populates once when the platform is bootstrapped.
 data "aws_ssm_parameter" "cloudflare_api_token" {
-  name = "/tinyapp/cloudflare/api_token"
+  name = "/quickship/cloudflare/api_token"
 }
 
 provider "cloudflare" {
@@ -39,7 +39,7 @@ provider "cloudflare" {
 
 # Neon provider — same SSM-backed pattern.
 data "aws_ssm_parameter" "neon_api_key" {
-  name = "/tinyapp/neon/api_key"
+  name = "/quickship/neon/api_key"
 }
 
 provider "neon" {

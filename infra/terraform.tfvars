@@ -1,5 +1,5 @@
 # Per-app config. The bootstrap script populated this; edit as needed.
-# Capability flags map directly to inputs on the platform's tinyapp module.
+# Capability flags map directly to inputs on the platform's quickship module.
 
 aws_region         = "__AWS_REGION__"
 allowed_principals = __ALLOWED_PRINCIPALS__
@@ -17,7 +17,7 @@ developers = __DEVELOPERS__
 
 # Capabilities — opt in to what this app uses. Each maps to platform-side
 # resources (DB role, S3 bucket, DynamoDB table, IAM grant) created by the
-# tinyapp module.
+# quickship module.
 database_enabled  = __DATABASE_ENABLED__
 storage_enabled   = __STORAGE_ENABLED__
 dynamodb_tables   = __DYNAMODB_TABLES__

@@ -23,14 +23,14 @@ Before you can create or deploy any app, your machine needs to be able to reach 
 
 The admin generates these by running:
 ```bash
-aws iam create-access-key --user-name tinyapp-developer-<your-name>
+aws iam create-access-key --user-name quickship-developer-<your-name>
 ```
 …and sends the values to you over a secure channel (1Password, Bitwarden Send, Signal). Don't accept them via email or Slack DM.
 
 **On your machine, run one command:**
 
 ```bash
-aws configure --profile tinyapp
+aws configure --profile quickship
 ```
 
 When prompted, paste the values:
@@ -42,10 +42,10 @@ When prompted, paste the values:
 **Verify it works:**
 
 ```bash
-aws sts get-caller-identity --profile tinyapp
+aws sts get-caller-identity --profile quickship
 ```
 
-You should see output ending in `user/tinyapp-developer-<your-name>`. That's it — every future `aws ...` command and every `bootstrap.sh` picks this up automatically.
+You should see output ending in `user/quickship-developer-<your-name>`. That's it — every future `aws ...` command and every `bootstrap.sh` picks this up automatically.
 
 If anything fails here, just tell Claude what the error said. It can read the AWS CLI's output and walk you through the fix.
 

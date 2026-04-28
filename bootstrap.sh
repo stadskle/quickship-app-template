@@ -25,7 +25,7 @@ fi
 # Derive AWS account ID from the configured profile (the developer onboarding
 # done by the platform admin set this up). No prompting — this also doubles
 # as a credentials sanity check.
-aws_profile="${AWS_PROFILE:-tinyapp}"
+aws_profile="${AWS_PROFILE:-quickship}"
 aws_account_id=$(aws sts get-caller-identity --profile "$aws_profile" --query Account --output text 2>/dev/null || true)
 if ! [[ "$aws_account_id" =~ ^[0-9]{12}$ ]]; then
   cat <<EOF >&2

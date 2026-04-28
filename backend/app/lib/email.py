@@ -2,7 +2,7 @@
 Outbound email helper.
 
 Production: SES (AWS account's verified domain identity, IAM-granted by
-the tinyapp module when `email_enabled = true`).
+the quickship module when `email_enabled = true`).
 Local dev (no `EMAIL_SENDER_DOMAIN`): renders the email to stderr so the
 dev sees what would have been sent. Same call site, no flag-passing.
 """

@@ -1,5 +1,5 @@
 ---
-name: tinyapp-reviewer
+name: quickship-reviewer
 description: Review changes against quickship platform conventions and security rules. Use proactively before suggesting commits or PR-ready changes. (Tools: Read, Grep, Glob, Bash)
 model: sonnet
 ---

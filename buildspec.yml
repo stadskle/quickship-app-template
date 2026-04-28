@@ -8,7 +8,7 @@ version: 0.2
 # matches Lambda Graviton arch so wheels with C extensions
 # (psycopg, cryptography) load correctly when packed into the zip.
 #
-# Env vars injected by the platform's tinyapp module:
+# Env vars injected by the platform's quickship module:
 #   LAMBDA_FUNCTION_NAME — target Lambda name
 #   AWS_REGION           — region for the deploy call
 #   PYTHON_RUNTIME       — informational; alignment with `runtime-versions` below

@@ -131,23 +131,23 @@ Locally, just set the env var (`export STRIPE_API_KEY=sk_test_...` in your shell
 
 The platform provisions a per-developer IAM user with per-app permissions attached directly. The developer (or you, on their behalf) configures it once locally:
 
-- **Profile name**: `tinyapp` (the platform's `name_prefix`; substitute if your platform uses a different prefix).
-- For `aws ...` commands: use the `--profile tinyapp` flag form (this matches the whitelist in `.claude/settings.json` so common read-only calls run without prompting).
-- For `docker compose up`: use `AWS_PROFILE=tinyapp docker compose up` (or `export AWS_PROFILE=tinyapp` once in your shell). The container reads `AWS_PROFILE` from its environment to pick the right profile from the mounted `~/.aws/config` — a `--profile` flag on the docker side wouldn't reach the backend.
+- **Profile name**: `quickship` (the platform's `name_prefix`; substitute if your platform uses a different prefix).
+- For `aws ...` commands: use the `--profile quickship` flag form (this matches the whitelist in `.claude/settings.json` so common read-only calls run without prompting).
+- For `docker compose up`: use `AWS_PROFILE=quickship docker compose up` (or `export AWS_PROFILE=quickship` once in your shell). The container reads `AWS_PROFILE` from its environment to pick the right profile from the mounted `~/.aws/config` — a `--profile` flag on the docker side wouldn't reach the backend.
 
-If the profile isn't set up yet, run `aws configure --profile tinyapp` and paste the access key + secret the platform admin sent. Region: usually `eu-central-1`. Output: `json`.
+If the profile isn't set up yet, run `aws configure --profile quickship` and paste the access key + secret the platform admin sent. Region: usually `eu-central-1`. Output: `json`.
 
 Verify it works:
 
 ```bash
-aws --profile tinyapp sts get-caller-identity
+aws --profile quickship sts get-caller-identity
 ```
 
-Success returns an `Arn:` ending in `user/tinyapp-developer-<name>`. If this fails:
+Success returns an `Arn:` ending in `user/quickship-developer-<name>`. If this fails:
 
 | Error | Fix |
 |---|---|
-| `Unable to locate credentials` / `The config profile (tinyapp) could not be found` | Profile not configured. Run `aws configure --profile tinyapp` and paste the keys the admin sent. |
+| `Unable to locate credentials` / `The config profile (quickship) could not be found` | Profile not configured. Run `aws configure --profile quickship` and paste the keys the admin sent. |
 | `InvalidClientTokenId` | Access key wrong, or rotated. Ask the admin for the current key (or rotate yourself if you're admin). |
 | `AccessDenied` on a specific resource | This user isn't on the app's `developers` list in the platform TF. Have the admin add the name and re-apply. |
 
@@ -156,19 +156,19 @@ Success returns an `Arn:` ending in `user/tinyapp-developer-<name>`. If this fai
 **Tail Lambda runtime logs** (the most-used command — runtime errors land here):
 
 ```bash
-aws --profile tinyapp logs tail /aws/lambda/tinyapp-<app> --follow --since 10m
+aws --profile quickship logs tail /aws/lambda/quickship-<app> --follow --since 10m
 ```
 
 **Tail CodeBuild logs** (for failed deploys):
 
 ```bash
-aws --profile tinyapp logs tail /aws/codebuild/tinyapp-<app> --follow --since 10m
+aws --profile quickship logs tail /aws/codebuild/quickship-<app> --follow --since 10m
 ```
 
 **See pipeline state** (which stage is running, which failed):
 
 ```bash
-aws --profile tinyapp codepipeline get-pipeline-state --name tinyapp-<app>
+aws --profile quickship codepipeline get-pipeline-state --name quickship-<app>
 ```
 
 The output's `latestExecution.status` per stage tells you `Succeeded`, `InProgress`, or `Failed`. For a failed stage, look at `errorDetails` in the same JSON.
@@ -176,20 +176,20 @@ The output's `latestExecution.status` per stage tells you `Succeeded`, `InProgre
 **Get details of a specific build** (build ID comes from pipeline state or `list-builds-for-project`):
 
 ```bash
-aws --profile tinyapp codebuild batch-get-builds --ids <build-id>
+aws --profile quickship codebuild batch-get-builds --ids <build-id>
 ```
 
 **Trigger a manual pipeline run** (asks for confirmation — write op):
 
 ```bash
-aws --profile tinyapp codepipeline start-pipeline-execution --name tinyapp-<app>
+aws --profile quickship codepipeline start-pipeline-execution --name quickship-<app>
 ```
 
 **Read a secret value** (verify the operator set it correctly):
 
 ```bash
-aws --profile tinyapp ssm get-parameter \
-  --name /tinyapp/apps/<app>/<secret_name> \
+aws --profile quickship ssm get-parameter \
+  --name /quickship/apps/<app>/<secret_name> \
   --with-decryption \
   --query Parameter.Value --output text
 ```
@@ -197,8 +197,8 @@ aws --profile tinyapp ssm get-parameter \
 **Set a secret value** (asks for confirmation — write op):
 
 ```bash
-aws --profile tinyapp ssm put-parameter \
-  --name /tinyapp/apps/<app>/<secret_name> \
+aws --profile quickship ssm put-parameter \
+  --name /quickship/apps/<app>/<secret_name> \
   --value '...' \
   --type SecureString \
   --overwrite
@@ -211,8 +211,8 @@ aws --profile tinyapp ssm put-parameter \
 For deeper search, use Logs Insights:
 
 ```bash
-aws --profile tinyapp logs start-query \
-  --log-group-name /aws/lambda/tinyapp-<app> \
+aws --profile quickship logs start-query \
+  --log-group-name /aws/lambda/quickship-<app> \
   --start-time $(date -v-1H +%s) \
   --end-time $(date +%s) \
   --query-string 'fields @timestamp, @message | filter @message like /error/i | sort @timestamp desc | limit 50'
@@ -226,10 +226,10 @@ For `docker compose up`, the backend container needs the profile in its environm
 
 ```bash
 # Per-session: prefix the command
-AWS_PROFILE=tinyapp docker compose up
+AWS_PROFILE=quickship docker compose up
 
 # Or set it once in your shell so future commands inherit
-export AWS_PROFILE=tinyapp
+export AWS_PROFILE=quickship
 docker compose up
 ```
 
@@ -242,7 +242,7 @@ The backend container reads creds from the mounted `~/.aws` and exercises real A
 - **Run locally**: `docker compose up`.
 - **Deploy infra changes** (Terraform): `/deploy`. Runs the security review, sets `git_repo` if needed, plans, applies. After the first apply creates the pipeline, code changes ship via `git push` automatically — only re-run `/deploy` when something in `infra/` changes.
 - **Ship code changes**: `git push`. CodePipeline detects, builds, and updates the Lambda. Watch progress at `terraform output -raw pipeline_console_url`.
-- **Inspect prod DB**: `psql "$(aws --profile tinyapp ssm get-parameter --name /tinyapp/apps/__APP_NAME__/database_url --with-decryption --query Parameter.Value --output text --region eu-central-1)"`.
+- **Inspect prod DB**: `psql "$(aws --profile quickship ssm get-parameter --name /quickship/apps/__APP_NAME__/database_url --with-decryption --query Parameter.Value --output text --region eu-central-1)"`.
 
 ## Changing the Python version (rare)
 
@@ -256,7 +256,7 @@ All three must match (Lambda runtime, local image, CodeBuild image) — psycopg/
 
 ## Security rules
 
-Amateurs build these apps. You (Claude) carry the burden of *not* introducing common security holes — the user won't know to ask. Treat every feature as half-done until you've checked these. Run `/review` (or invoke the `tinyapp-reviewer` agent) before declaring a feature complete.
+Amateurs build these apps. You (Claude) carry the burden of *not* introducing common security holes — the user won't know to ask. Treat every feature as half-done until you've checked these. Run `/review` (or invoke the `quickship-reviewer` agent) before declaring a feature complete.
 
 ### Authorization on every read AND write
 
@@ -355,5 +355,5 @@ When bumping, read the changelog between the old and new version for breaking ch
 
 ## Reference
 
-- Platform module source: `infra/main.tf` references `quickship-platform//modules/tinyapp`. Full docs in that repo.
+- Platform module source: `infra/main.tf` references `quickship-platform//modules/quickship`. Full docs in that repo.
 - Platform spec for this app: `https://specs.<platform-domain>/__APP_NAME__/spec.json` (once Step 8 lands).
