@@ -18,7 +18,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "quickship-tfstate-__AWS_ACCOUNT_ID__"
+    bucket       = "__AWS_PROFILE__-tfstate-__AWS_ACCOUNT_ID__"
     key          = "apps/__APP_NAME__.tfstate"
     region       = "__AWS_REGION__"
     encrypt      = true

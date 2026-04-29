@@ -23,7 +23,7 @@ Deploy this app to the platform's AWS account.
      Do not run repo-creation commands yourself unless the user explicitly says go — repo creation is publicly visible and their call to make. Once the remote is configured, re-derive `git_repo` from `git remote get-url origin` and update `terraform.tfvars`.
 
 2. **Verify the AWS profile works**:
-   `aws --profile quickship sts get-caller-identity`
+   `aws --profile __AWS_PROFILE__ sts get-caller-identity`
    If this fails (Unable to locate credentials / ExpiredToken), point the user at the developer-onboarding section of CLAUDE.md ("AWS access for debugging") and stop. Don't try to deploy with broken credentials.
 
 ## Deploy
@@ -43,7 +43,7 @@ Deploy this app to the platform's AWS account.
 8. **First apply**: CloudFront takes ~5 minutes to propagate. Tell the user the URL from `terraform output app_url` won't respond until the distribution is `Deployed` — they can re-check in a few minutes.
 
 9. **Pipeline first run**: when `git_repo` was just set, the pipeline was created but hasn't run. The CodeStarSourceConnection's "Detect changes" hook fires on the next push to `git_branch`. To kick it manually:
-   `aws --profile quickship codepipeline start-pipeline-execution --name $(terraform output -raw function_name)`
+   `aws --profile __AWS_PROFILE__ codepipeline start-pipeline-execution --name $(terraform output -raw function_name)`
    Watch progress: `terraform output -raw pipeline_console_url` (paste in browser).
 
 10. **If the build fails** with `Repository not found`: the platform's CodeConnection isn't authorized for the repo's owner. Tell the user to go to the AWS Console → Developer Tools → Settings → Connections → click the platform connection → "Configure" the GitHub App and grant access to the repo's owner (their personal account or the org).

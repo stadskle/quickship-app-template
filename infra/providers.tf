@@ -3,7 +3,8 @@
 # platform admin populated once during platform bootstrap.
 
 provider "aws" {
-  region = var.aws_region
+  profile = var.aws_profile
+  region  = var.aws_region
 
   default_tags {
     tags = {
@@ -16,8 +17,9 @@ provider "aws" {
 # us-east-1 is required for the platform's CLOUDFRONT-scope WAF reference.
 # Nothing else in this app needs us-east-1.
 provider "aws" {
-  alias  = "us_east_1"
-  region = "us-east-1"
+  alias   = "us_east_1"
+  profile = var.aws_profile
+  region  = "us-east-1"
 
   default_tags {
     tags = {
@@ -28,9 +30,10 @@ provider "aws" {
 }
 
 # Cloudflare API token comes from the platform-shared SSM placeholder;
-# operator populates once when the platform is bootstrapped.
+# operator populates once when the platform is bootstrapped. Path uses the
+# same prefix as your AWS profile name (the platform's name_prefix).
 data "aws_ssm_parameter" "cloudflare_api_token" {
-  name = "/quickship/cloudflare/api_token"
+  name = "/${var.aws_profile}/cloudflare/api_token"
 }
 
 provider "cloudflare" {
@@ -39,7 +42,7 @@ provider "cloudflare" {
 
 # Neon provider — same SSM-backed pattern.
 data "aws_ssm_parameter" "neon_api_key" {
-  name = "/quickship/neon/api_key"
+  name = "/${var.aws_profile}/neon/api_key"
 }
 
 provider "neon" {

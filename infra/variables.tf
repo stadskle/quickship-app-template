@@ -1,3 +1,8 @@
+variable "aws_profile" {
+  type        = string
+  description = "Local AWS profile name used by terraform's AWS provider. Same as the platform's name_prefix (per convention). Set by bootstrap.sh; you generally shouldn't edit by hand."
+}
+
 variable "aws_region" {
   type        = string
   description = "AWS region where this app's resources live (Lambda, S3, etc.). Should match the platform region."

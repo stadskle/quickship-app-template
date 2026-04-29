@@ -22,21 +22,25 @@ if ! [[ "$app_name" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
   exit 1
 fi
 
-# Derive AWS account ID from the configured profile (the developer onboarding
-# done by the platform admin set this up). No prompting — this also doubles
-# as a credentials sanity check.
-aws_profile="${AWS_PROFILE:-quickship}"
+# Platform prefix — this is also the AWS profile name (per convention).
+# Default 'quickship' covers the canonical install. Platforms with a custom
+# name_prefix on their bootstrap module set the matching value here.
+read -r -p "Platform prefix [quickship]: " aws_profile
+aws_profile=${aws_profile:-quickship}
+if ! [[ "$aws_profile" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
+  echo "Error: platform prefix must be 3-32 chars, lowercase letters/digits/hyphens, start with a letter, end alphanumeric." >&2
+  exit 1
+fi
+
+# Validate the AWS profile of that name actually authenticates.
 aws_account_id=$(aws sts get-caller-identity --profile "$aws_profile" --query Account --output text 2>/dev/null || true)
 if ! [[ "$aws_account_id" =~ ^[0-9]{12}$ ]]; then
   cat <<EOF >&2
-Error: couldn't get the AWS account ID via the '$aws_profile' profile.
+Error: couldn't authenticate via the '$aws_profile' profile.
 
-This usually means AWS credentials aren't set up yet on this machine.
-See the "Set up AWS access" section in the template README — your
-platform admin should have given you an access key and an ~/.aws/config
-snippet. Once configured, this command should work:
-
-    aws sts get-caller-identity --profile $aws_profile
+Set up the profile if you haven't:
+    aws configure --profile $aws_profile
+…and paste the access key + secret your platform admin sent.
 
 Then re-run ./bootstrap.sh.
 EOF
@@ -131,6 +135,7 @@ substitute() {
   sedi "s|__APP_NAME__|${app_name}|g" "$file"
   sedi "s|__AWS_ACCOUNT_ID__|${aws_account_id}|g" "$file"
   sedi "s|__AWS_REGION__|${aws_region}|g" "$file"
+  sedi "s|__AWS_PROFILE__|${aws_profile}|g" "$file"
   sedi "s|__PLATFORM_SOURCE__|${platform_source}|g" "$file"
   sedi "s|__PLATFORM_VERSION__|${platform_version}|g" "$file"
   sedi "s|__ALLOWED_PRINCIPALS__|${allowed_principals_json}|g" "$file"
@@ -155,6 +160,7 @@ files=(
   infra/providers.tf
   infra/versions.tf
   infra/terraform.tfvars
+  .claude/commands/deploy.md
 )
 
 for f in "${files[@]}"; do

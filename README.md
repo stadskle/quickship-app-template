@@ -29,9 +29,10 @@ aws iam create-access-key --user-name quickship-developer-<your-name>
 ```
 …and sends the values to you over a secure channel (1Password, Bitwarden Send, Signal). Don't accept them via email or Slack DM.
 
-**On your machine, run one command:**
+**On your machine** — your platform admin will tell you the **prefix** for your platform (e.g., `quickship`, `acme-platform`). Use that prefix as your profile name:
 
 ```bash
+# Replace 'quickship' with your platform's prefix if different
 aws configure --profile quickship
 ```
 
@@ -47,7 +48,7 @@ When prompted, paste the values:
 aws sts get-caller-identity --profile quickship
 ```
 
-You should see output ending in `user/quickship-developer-<your-name>`. That's it — every future `aws ...` command and every `bootstrap.sh` picks this up automatically.
+You should see output ending in `user/<prefix>-developer-<your-name>`. That's it — `bootstrap.sh` will ask for the prefix once when you scaffold an app and record it in the project, so subsequent commands don't need any environment-variable dance.
 
 If anything fails here, just tell Claude what the error said. It can read the AWS CLI's output and walk you through the fix.
 

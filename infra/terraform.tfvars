@@ -1,6 +1,7 @@
 # Per-app config. The bootstrap script populated this; edit as needed.
 # Capability flags map directly to inputs on the platform's quickship module.
 
+aws_profile        = "__AWS_PROFILE__"
 aws_region         = "__AWS_REGION__"
 allowed_principals = __ALLOWED_PRINCIPALS__
 
