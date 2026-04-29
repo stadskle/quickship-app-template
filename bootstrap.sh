@@ -25,6 +25,9 @@ fi
 # Platform prefix — this is also the AWS profile name (per convention).
 # Default 'quickship' covers the canonical install. Platforms with a custom
 # name_prefix on their bootstrap module set the matching value here.
+echo
+echo "Platform prefix — keep the default ('quickship') unless your platform admin"
+echo "has told you to use a different value."
 read -r -p "Platform prefix [quickship]: " aws_profile
 aws_profile=${aws_profile:-quickship}
 if ! [[ "$aws_profile" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
