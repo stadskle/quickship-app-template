@@ -65,15 +65,16 @@ def connection() -> psycopg.Connection:
 
 @contextmanager
 def transaction():
-    """Context manager for a transactional connection.
+    """Context manager for a transactional cursor.
 
     Commits on clean exit, rolls back on exception. Closes the connection
     afterwards. Use for any multi-statement unit of work.
 
-        with db.transaction() as conn:
-            conn.execute("INSERT ...")
-            conn.execute("UPDATE ...")
+        with db.transaction() as cur:
+            cur.execute("INSERT INTO notes (...) VALUES (...)")
+            cur.execute("UPDATE counters SET n = n + 1")
+            cur.fetchone()  # if you need to read a RETURNING row
     """
     with connection() as conn:
-        with conn.transaction():
-            yield conn
+        with conn.transaction(), conn.cursor() as cur:
+            yield cur

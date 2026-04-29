@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 interface User {
   email: string;
-  groups: string[];
 }
 
 export function App() {
@@ -32,14 +31,7 @@ export function App() {
           {error ? (
             <div className="text-red-600">Error fetching /api/me: {error}</div>
           ) : user ? (
-            <div>
-              <div className="font-mono text-slate-900">{user.email}</div>
-              {user.groups.length > 0 && (
-                <div className="text-slate-500 text-xs mt-1">
-                  groups: {user.groups.join(", ")}
-                </div>
-              )}
-            </div>
+            <div className="font-mono text-slate-900">{user.email}</div>
           ) : (
             <div className="text-slate-400">…</div>
           )}

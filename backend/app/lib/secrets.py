@@ -21,9 +21,30 @@ import os
 
 _PLACEHOLDER = "REPLACE_ME"
 
+# Names the platform already injects as Lambda env vars for built-in
+# capabilities. Reserving them here prevents `secret_names` collisions
+# from silently shadowing platform-managed values (e.g. someone adding
+# "database_url" to secret_names would otherwise overwrite the
+# platform-injected DATABASE_URL).
+_RESERVED_NAMES = frozenset({
+    "database_url",
+    "storage_bucket",
+    "email_sender_domain",
+    "tinyapp_name",
+    "aws_region",
+    "aws_default_region",
+})
+
 
 def get(name: str) -> str:
     """Return the value of secret `name`. Raises if unset or still a placeholder."""
+    if name.lower() in _RESERVED_NAMES:
+        raise RuntimeError(
+            f"Secret name '{name}' is reserved by the platform "
+            f"(injected as a Lambda env var by capability flags). "
+            f"Pick a different name like '{name}_secret' or '{name}_token'."
+        )
+
     env_key = name.upper()
     value = os.environ.get(env_key)
 

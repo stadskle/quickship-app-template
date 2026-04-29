@@ -33,7 +33,7 @@ When `requirements.txt` or `package.json` has been edited:
 - For each added or bumped package, check the latest stable version on the registry and flag if the pinned version is more than ~6 months behind:
   - Python: `pip index versions <package> 2>/dev/null | head -2` or fetch `https://pypi.org/pypi/<package>/json`
   - Node: `npm view <package> version`
-- Flag any non-exact pin in production deps (`^x.y.z`, `~x.y.z`, `>=x.y.z`). Quickship apps pin exact versions.
+- Quickship's pin convention: caret (`^x.y.z`) in `package.json`, compatible-release (`~=x.y.z`) in `requirements.txt`. Both lock the major (and `~=` also locks the minor) while allowing automatic patch updates — gives hallucination resilience for LLM-pinned deps. Flag bare `>=`, `*`, ranges with no upper bound, or untagged Docker images. Exact pins (`==x.y.z`, `"x.y.z"` with no prefix) are still acceptable but not preferred.
 - Flag new deps that overlap functionality already in `app/lib/*` (e.g., `redis` when DynamoDB KV exists, `requests` when `httpx` is already vendored, `pyjwt` for any reason).
 
 ## Soft warnings

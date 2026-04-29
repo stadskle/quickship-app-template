@@ -43,6 +43,11 @@ output "function_name" {
   value       = module.app.function_name
 }
 
+output "pipeline_name" {
+  description = "Name of this app's CodePipeline. Pass to `aws codepipeline start-pipeline-execution`."
+  value       = module.app.pipeline_name
+}
+
 output "pipeline_console_url" {
   description = "Direct link to this app's CodePipeline in the AWS console."
   value       = module.app.pipeline_console_url

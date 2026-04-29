@@ -19,6 +19,8 @@ Cloudflare Access authenticates the user before any request reaches the app. The
 - In production (header present): returns `{"email": "<user>"}`.
 - Locally (header missing because Cloudflare isn't in the path): returns `{"email": "dev@local"}` as a fixture.
 
+> ⚠ The local auth fixture trusts whatever `Cf-Access-Authenticated-User-Email` header it sees, falling back to `dev@local` if absent. That's safe on a single-developer laptop where docker-compose is reachable only from `localhost`. **Don't expose port 8000 publicly** (no `ngrok`, no router port-forward, no `--host 0.0.0.0` outside the container) — anyone reaching it could spoof any email by setting that header. For "let a teammate try my local app", use `/deploy` instead and Cloudflare Access will gate it properly.
+
 **Email is the identity.** It's stable across sessions, so use it directly as the foreign key on user-owned rows. Don't invent a `user_id` table or UUID — the email *is* the user ID.
 
 Idiomatic per-user route:
@@ -95,6 +97,8 @@ The platform supports exactly these five capabilities. Don't suggest other AWS s
 | **Bedrock AI** | `ai_models_enabled = true` | (no env var; IAM grant only) | LLM calls. Use `app.lib.ai`. |
 
 **Workflow when enabling**: edit `terraform.tfvars`, run `/deploy`. The deploy creates the cloud resources (DB role+database, S3 bucket, etc.) and re-deploys the Lambda with the new env vars. Existing app code doesn't need to change — the helper just starts working in production. Locally, the helper continues using its fallback (postgres in docker-compose, `./uploads/`, SQLite, stderr) until you set the matching env vars in your shell or `docker-compose.yml`.
+
+> ⚠ **Dev/prod parity caveat**: docker-compose always boots Postgres locally, even when `database_enabled = false`. So `db.connection()` works locally but raises in production with that flag off. If you call `db.connection()` and don't set `database_enabled = true`, you'll only discover the gap on first deploy. Best practice: only call DB helpers if you've also enabled the matching capability in `terraform.tfvars`.
 
 **If the user asks for something outside this list** — e.g. "use Redis for caching", "set up an SQS queue", "trigger a Lambda from EventBridge", "use RDS instead of Neon" — explain that this isn't part of the quickship platform and point them at the platform admin. Don't try to wire raw AWS services around the platform.
 
