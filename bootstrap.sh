@@ -94,6 +94,7 @@ echo
 echo "Who can access this app? Comma-separated list. Each entry is either:"
 echo "  - a single email address  (e.g.  alice@example.com)"
 echo "  - everyone at a domain    (e.g.  *@example.com)"
+echo "(You can change this list later in infra/terraform.tfvars and re-deploy.)"
 while true; do
   read -r -p "Allowed users: " allowed_principals_raw
   [[ -n "$allowed_principals_raw" ]] && break
