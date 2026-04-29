@@ -75,8 +75,6 @@ EOF
 fi
 echo "✓ Platform source: $platform_source (via SSM)"
 
-read -r -p "Platform module ref (tag or branch) [main]: " platform_version
-platform_version=${platform_version:-main}
 
 # Auto-detect this developer's name from the IAM user ARN. The convention
 # is <prefix>-developer-<name>; if the caller matches, pre-populate the
@@ -137,7 +135,6 @@ substitute() {
   sedi "s|__AWS_REGION__|${aws_region}|g" "$file"
   sedi "s|__AWS_PROFILE__|${aws_profile}|g" "$file"
   sedi "s|__PLATFORM_SOURCE__|${platform_source}|g" "$file"
-  sedi "s|__PLATFORM_VERSION__|${platform_version}|g" "$file"
   sedi "s|__ALLOWED_PRINCIPALS__|${allowed_principals_json}|g" "$file"
   sedi "s|__DATABASE_ENABLED__|${database_enabled}|g" "$file"
   sedi "s|__STORAGE_ENABLED__|${storage_enabled}|g" "$file"

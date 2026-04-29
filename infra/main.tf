@@ -3,7 +3,9 @@
 # pipeline artifact bucket) from SSM internally; this consumer just sets
 # per-app config + capability flags + git repo location.
 module "app" {
-  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=__PLATFORM_VERSION__"
+  # `?ref=main` tracks latest. Pin to a tag (e.g. `?ref=v0.3.1`) if you want
+  # stability — change here, then `terraform init -upgrade` and re-deploy.
+  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=main"
 
   providers = {
     aws           = aws
