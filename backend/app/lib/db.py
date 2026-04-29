@@ -10,6 +10,7 @@ not enabled for this app), all functions are no-ops.
 from __future__ import annotations
 
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -22,12 +23,23 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 _MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "migrations"
 
 
+def _yoyo_url(url: str) -> str:
+    """Translate a stdlib postgres URL into yoyo's psycopg-v3 form.
+
+    yoyo's default driver for `postgresql://` is psycopg2; we install psycopg
+    (v3) only. The `postgresql+psycopg://` scheme tells yoyo to use psycopg v3.
+    psycopg.connect() itself only accepts plain `postgresql://`, so we keep
+    the original DATABASE_URL for runtime queries and only rewrite for yoyo.
+    """
+    return re.sub(r"^postgres(ql)?://", "postgresql+psycopg://", url, count=1)
+
+
 def apply_migrations() -> None:
     """Apply any pending migrations. Idempotent. No-op if no DATABASE_URL."""
     if not DATABASE_URL:
         return
 
-    backend = get_backend(DATABASE_URL)
+    backend = get_backend(_yoyo_url(DATABASE_URL))
     migrations = read_migrations(str(_MIGRATIONS_DIR))
     with backend.lock():
         backend.apply_migrations(backend.to_apply(migrations))

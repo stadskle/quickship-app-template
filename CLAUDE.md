@@ -344,11 +344,14 @@ LLMs (you) often pin stale versions because training data is older than the regi
 1. Fetch the **current latest stable** version from PyPI / npm — don't guess from memory.
    - `pip index versions <package>` or check `https://pypi.org/project/<package>/`
    - `npm view <package> version`
-2. Pin exact versions in `requirements.txt` and `package.json` (no `^`, `~`, `>=`).
+2. Use the project's existing pin convention:
+   - `package.json` → caret pins like `"^X.Y.Z"` (locks major; allows minor + patch).
+   - `requirements.txt` → compatible-release like `pkg~=X.Y.Z` (locks minor; allows patch).
+   - This gives hallucination resilience (a non-existent specific patch resolves to latest in range) and automatic security patches without template-side maintenance.
 3. Prefer existing helpers and stdlib. New deps are surface area; the burden of justification is on the new dep.
-4. If the user asks for a feature that needs a new dep, surface that explicitly: "this needs `<package>==<version>` — confirm before I add it?"
+4. If the user asks for a feature that needs a new dep, surface that explicitly: "this needs `<package>` (latest is `X.Y.Z`) — confirm before I add it?"
 
-When bumping, read the changelog between the old and new version for breaking changes — don't just bump and pray.
+When bumping the major (or pulling in something that requires a major-version bump on an existing dep), read the changelog for breaking changes — don't just bump and pray. Lockfiles (`package-lock.json` once you `npm install`, optional `requirements-lock.txt` via `pip freeze`) capture the exact resolved tree per repo for reproducibility.
 
 ## Don'ts
 
