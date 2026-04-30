@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+#
+# initialize.sh — set up or update this app's cloud resources via the
+# platform orchestrator. Used both for first-time provisioning and for
+# applying subsequent infra changes (tfvars edits).
+#
+# This is a guided, host-agnostic flow. The dev never has terraform-apply
+# permissions; the orchestrator (a CodeBuild project at the platform level)
+# does the apply on their behalf.
+#
+# Lifecycle:
+#   - First run: full provisioning of Lambda, CloudFront, pipeline, etc.
+#     Walks through git remote setup if missing.
+#   - Subsequent runs: applies tfvars changes (capability flag toggles,
+#     developer additions, secret_names changes). Quick, no remote dance.
+#
+# Run from the app's root directory (the one containing infra/).
+
+set -euo pipefail
+
+# ---- helpers ----------------------------------------------------------------
+
+err() { echo "Error: $*" >&2; exit 1; }
+
+confirm() {
+  # Returns 0 (success) for yes, 1 for no
+  local prompt="$1"
+  local answer
+  read -r -p "$prompt [y/N]: " answer
+  answer=$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')
+  case "$answer" in
+    y|yes) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# ---- config -----------------------------------------------------------------
+
+# AWS profile baked in at scaffold time by bootstrap.sh.
+AWS_PROFILE_NAME="__AWS_PROFILE__"
+
+# ---- pre-flight -------------------------------------------------------------
+
+[[ -d infra ]] || err "no infra/ directory — run from the app root."
+[[ -f infra/terraform.tfvars ]] || err "no infra/terraform.tfvars."
+
+APP_NAME=$(grep -E '^app_name\b' infra/terraform.tfvars | head -1 | cut -d'"' -f2)
+[[ -n "$APP_NAME" ]] || err "could not parse app_name from infra/terraform.tfvars."
+
+echo "→ App: $APP_NAME"
+echo "→ AWS profile: $AWS_PROFILE_NAME"
+
+# Verify AWS profile authenticates.
+if ! aws --profile "$AWS_PROFILE_NAME" sts get-caller-identity >/dev/null 2>&1; then
+  err "AWS profile '$AWS_PROFILE_NAME' isn't configured or credentials are expired.
+       Run: aws configure --profile $AWS_PROFILE_NAME"
+fi
+echo "✓ AWS authenticated"
+
+# ---- git remote -------------------------------------------------------------
+
+if ! git remote get-url origin >/dev/null 2>&1; then
+  cat <<EOF
+
+This app needs a git remote before it can be deployed. The orchestrator
+records 'app_name -> repo URL' so two repos can't claim the same name.
+
+Steps:
+  1. Create an EMPTY repository on your git host (GitHub, GitLab, Bitbucket,
+     self-hosted — any host your platform admin has set up). Don't initialize
+     it with a README, LICENSE, or .gitignore — must be completely empty.
+
+  2. Paste the URL below. Either form works:
+       https://gitlab.com/your-org/your-app.git
+       git@github.com:your-org/your-app.git
+       (or any HTTPS / SSH form)
+
+EOF
+  while [[ -z "${REPO_URL:-}" ]]; do
+    read -r -p "Repository URL: " REPO_URL
+  done
+  git remote add origin "$REPO_URL"
+  echo "→ Pushing initial commit..."
+  git push -u origin main
+  echo "✓ Remote set up"
+fi
+
+REPO_URL=$(git remote get-url origin)
+echo "→ Repo: $REPO_URL"
+
+# ---- update tfvars's git_repo if blank --------------------------------------
+
+CURRENT_GIT_REPO=$(grep -E '^git_repo\b' infra/terraform.tfvars | head -1 | cut -d'"' -f2 || echo "")
+
+if [[ -z "$CURRENT_GIT_REPO" ]]; then
+  # Strip protocol / git@ / .git suffix to derive owner/repo.
+  parsed=$(echo "$REPO_URL" | sed -E 's|^https?://[^/]+/||; s|^git@[^:]+:||; s|\.git$||; s|/$||')
+  echo "→ Setting git_repo = \"$parsed\" in infra/terraform.tfvars"
+
+  # Cross-platform sed -i (BSD on macOS, GNU on Linux).
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s|^git_repo *= *\".*\"|git_repo = \"$parsed\"|" infra/terraform.tfvars
+  else
+    sed -i "s|^git_repo *= *\".*\"|git_repo = \"$parsed\"|" infra/terraform.tfvars
+  fi
+fi
+
+# ---- warn on uncommitted / unpushed work ------------------------------------
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo
+  echo "⚠ Uncommitted changes in your working tree:"
+  git status --short
+  echo
+  echo "  The orchestrator deploys what's currently in your working tree (NOT"
+  echo "  your remote). Uncommitted changes WILL be deployed but won't be in"
+  echo "  the git history — fine for testing, bad for production audit."
+  echo
+  if ! confirm "Proceed anyway?"; then
+    echo "Cancelled. Commit (and push) your changes first, then re-run."
+    exit 1
+  fi
+fi
+
+# ---- look up orchestrator ---------------------------------------------------
+
+ssm_get() {
+  aws --profile "$AWS_PROFILE_NAME" ssm get-parameter \
+    --name "$1" --query Parameter.Value --output text 2>/dev/null
+}
+
+ORCHESTRATOR_PROJECT=$(ssm_get "/$AWS_PROFILE_NAME/_platform/orchestrator_project") \
+  || err "couldn't read orchestrator handle from SSM. The platform may not be bootstrapped."
+INPUT_BUCKET=$(ssm_get "/$AWS_PROFILE_NAME/_platform/orchestrator_input_bucket") \
+  || err "couldn't read orchestrator input bucket."
+LOG_GROUP=$(ssm_get "/$AWS_PROFILE_NAME/_platform/orchestrator_log_group") \
+  || err "couldn't read orchestrator log group."
+
+echo "✓ Orchestrator: $ORCHESTRATOR_PROJECT"
+
+# ---- zip working tree -------------------------------------------------------
+
+STAMP=$(date +%Y%m%d-%H%M%S)
+ZIP_KEY="${APP_NAME}-${STAMP}.zip"
+ZIP_PATH="/tmp/${ZIP_KEY}"
+
+echo "→ Zipping working tree..."
+zip -rq "$ZIP_PATH" . \
+  -x '.git/*' 'node_modules/*' '.terraform/*' '*.tfstate*' \
+     'frontend/dist/*' '__pycache__/*' '.venv/*' \
+     '.idea/*' '.vscode/*' 'uploads/*' 'local.db*' \
+     'scripts/*'
+SIZE=$(du -h "$ZIP_PATH" | cut -f1)
+echo "✓ Zipped ($SIZE)"
+
+# ---- upload to S3 -----------------------------------------------------------
+
+echo "→ Uploading to s3://${INPUT_BUCKET}/${ZIP_KEY}..."
+aws --profile "$AWS_PROFILE_NAME" s3 cp "$ZIP_PATH" "s3://${INPUT_BUCKET}/${ZIP_KEY}" --quiet
+rm "$ZIP_PATH"
+echo "✓ Uploaded"
+
+# ---- start build ------------------------------------------------------------
+
+echo "→ Starting orchestrator..."
+BUILD_ID=$(aws --profile "$AWS_PROFILE_NAME" codebuild start-build \
+  --project-name "$ORCHESTRATOR_PROJECT" \
+  --source-type-override S3 \
+  --source-location-override "${INPUT_BUCKET}/${ZIP_KEY}" \
+  --environment-variables-override \
+    "name=MODE,value=apply" \
+    "name=REPO_URL,value=$REPO_URL" \
+  --query 'build.id' --output text)
+echo "✓ Build started: $BUILD_ID"
+
+# ---- tail logs --------------------------------------------------------------
+
+echo
+echo "Streaming orchestrator logs..."
+echo "─────────────────────────────────────────────────────────"
+
+aws --profile "$AWS_PROFILE_NAME" logs tail "$LOG_GROUP" \
+  --follow --format short \
+  --filter-pattern "{ \$.codebuild_build_id = \"${BUILD_ID}\" }" &
+TAIL_PID=$!
+
+cleanup() {
+  kill "$TAIL_PID" 2>/dev/null || true
+  wait "$TAIL_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# Poll status. CodeBuild's tail filter may not catch every line; we poll for
+# terminal status separately.
+while true; do
+  STATUS=$(aws --profile "$AWS_PROFILE_NAME" codebuild batch-get-builds \
+    --ids "$BUILD_ID" \
+    --query 'builds[0].buildStatus' --output text 2>/dev/null || echo "UNKNOWN")
+  case "$STATUS" in
+    SUCCEEDED|FAILED|FAULT|TIMED_OUT|STOPPED)
+      sleep 2  # let any final log lines stream
+      cleanup
+      echo
+      echo "─────────────────────────────────────────────────────────"
+      if [[ "$STATUS" == "SUCCEEDED" ]]; then
+        echo "✓ Build $STATUS"
+        exit 0
+      else
+        echo "✗ Build $STATUS"
+        echo "  See full logs: aws --profile $AWS_PROFILE_NAME logs tail $LOG_GROUP --since 30m"
+        exit 1
+      fi
+      ;;
+    *)
+      sleep 5
+      ;;
+  esac
+done

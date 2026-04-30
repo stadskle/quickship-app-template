@@ -161,7 +161,9 @@ files=(
   infra/providers.tf
   infra/versions.tf
   infra/terraform.tfvars
-  .claude/commands/deploy.md
+  .claude/commands/initialize.md
+  scripts/initialize.sh
+  scripts/destroy.sh
 )
 
 for f in "${files[@]}"; do
@@ -224,9 +226,10 @@ Next steps:
 2. Verify the scaffold runs locally (optional):
        docker compose up
 
-3. When you're ready to ship, ask Claude "/deploy". It will walk you
-   through creating your app's repo (GitHub or GitLab — whatever your
-   platform admin set up), pushing the code, and running the first
-   deploy. After that, every git push ships your app automatically.
+3. When you're ready to ship, ask Claude "/initialize". It will walk
+   you through creating your app's repo (GitHub or GitLab — whatever
+   your platform admin set up), pushing the code, and provisioning the
+   cloud resources. After that, every git push ships code automatically
+   via the per-app pipeline.
 
 EOF
