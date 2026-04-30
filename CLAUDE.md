@@ -367,10 +367,11 @@ The backend container reads creds from the mounted `~/.aws` and exercises real A
 ## Common tasks
 
 - **Add a route**: create `backend/app/routes/<name>.py`, register in `app/main.py`. Pattern: `@router.get("/api/...")` with `Depends(current_user)`.
-- **Add a migration**: create `backend/migrations/NNNN_description.sql` with the next sequential number. Plain SQL.
+- **Add a migration**: create `backend/migrations/NNNN_description.sql` with the next sequential number. Plain SQL with `-- migrate:` and `-- rollback:` sections.
 - **Run locally**: `docker compose up`.
-- **Deploy infra changes** (Terraform): `/deploy`. Runs the security review, sets `git_repo` if needed, plans, applies. After the first apply creates the pipeline, code changes ship via `git push` automatically — only re-run `/deploy` when something in `infra/` changes.
-- **Ship code changes**: `git push`. CodePipeline detects, builds, and updates the Lambda. Watch progress at `terraform output -raw pipeline_console_url`.
+- **Deploy infra changes** (anything in `infra/`): `/deploy`. Zips the working tree, uploads to the platform's orchestrator bucket, starts a CodeBuild that runs `terraform apply` with admin-level perms (the dev's own IAM user does NOT have apply perms — by design). Tails the logs until the build finishes.
+- **Ship code changes**: `git push`. The per-app pipeline (created on first `/deploy`) detects, builds, and updates the Lambda. Watch progress at `terraform output -raw pipeline_console_url`.
+- **Destroy an app entirely**: `/destroy`. Same orchestrator path with `MODE=destroy`. Strong confirmation required — irreversible.
 - **Inspect prod DB**: `psql "$(aws --profile __AWS_PROFILE__ ssm get-parameter --name /__AWS_PROFILE__/apps/__APP_NAME__/database_url --with-decryption --query Parameter.Value --output text --region eu-central-1)"`.
 
 ## Changing the Python version (rare)
