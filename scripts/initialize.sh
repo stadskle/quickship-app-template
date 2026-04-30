@@ -60,26 +60,37 @@ echo "✓ AWS authenticated"
 # ---- git remote -------------------------------------------------------------
 
 if ! git remote get-url origin >/dev/null 2>&1; then
-  cat <<EOF >&2
+  cat <<EOF
 
-Error: this app has no git remote 'origin'.
+This app needs a git remote before it can be deployed. The orchestrator
+records 'app_name -> repo URL' so two repos can't claim the same name.
 
-Set one up in your terminal first (this script is non-interactive on
-purpose so Claude / CI can drive it):
+Steps:
+  1. Create an EMPTY repository on your git host (GitHub, GitLab, Bitbucket,
+     self-hosted — any host your platform admin set up). Don't initialize
+     it with a README, LICENSE, or .gitignore — must be completely empty.
 
-  1. Create an EMPTY repo on your git host — GitHub, GitLab, Bitbucket,
-     self-hosted, anything. Don't initialize with a README/LICENSE/.gitignore.
+  2. Paste the URL below. Either form works:
+       https://gitlab.com/your-org/your-app.git
+       git@github.com:your-org/your-app.git
 
-  2. Wire it up locally:
-       git remote add origin <URL>
-       git push -u origin main
-
-  3. Re-run ./scripts/initialize.sh.
-
-(The bootstrap step normally prompts for this once during scaffold —
-this fail-path means it was skipped or this is an older scaffold.)
 EOF
-  exit 1
+  while [[ -z "${repo_url_input:-}" ]]; do
+    read -r -p "Repository URL: " repo_url_input
+  done
+  git remote add origin "$repo_url_input"
+  echo "→ Pushing initial commit..."
+  if ! git push -u origin main; then
+    echo
+    echo "Push failed. Common reasons:"
+    echo "  - Repo doesn't exist, or no write access"
+    echo "  - Repo isn't empty (was initialized with README/LICENSE/.gitignore)"
+    echo "  - SSH key not configured for this host"
+    echo
+    echo "Fix and re-run ./scripts/initialize.sh."
+    exit 1
+  fi
+  echo "✓ Remote set up"
 fi
 
 REPO_URL=$(git remote get-url origin)
