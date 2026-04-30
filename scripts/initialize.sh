@@ -148,20 +148,48 @@ fi
 
 if [[ "$REMOTE_JUST_ADDED" == "true" ]]; then
   echo "→ Pushing initial commit..."
-  if ! git push -u origin main; then
-    cat <<EOF
+  PUSH_OUTPUT=$(git push -u origin main 2>&1) || PUSH_FAILED=true
 
-Push failed. Common causes:
-  - Repo doesn't exist, or you don't have write access.
-  - Repo isn't empty (was initialized with README/LICENSE/.gitignore).
-  - HTTPS auth: GitHub/GitLab require a Personal Access Token, not a
-    password, for HTTPS git operations. If you have an SSH key registered,
-    use the SSH form instead:
+  if [[ -n "${PUSH_FAILED:-}" ]]; then
+    echo "$PUSH_OUTPUT"
+    echo
+
+    if echo "$PUSH_OUTPUT" | grep -q 'rejected.*fetch first\|non-fast-forward'; then
+      cat <<EOF
+The remote already has commits — your repo wasn't created empty.
+Most likely it was auto-initialized with a README / LICENSE / .gitignore.
+
+To merge the existing commits and keep them:
+    git pull origin main --allow-unrelated-histories --no-rebase --no-edit
+    git push -u origin main
+    ./scripts/initialize.sh
+
+Or to overwrite (only if you don't care what's currently on the remote):
+    git push -f -u origin main
+    ./scripts/initialize.sh
+
+EOF
+    elif echo "$PUSH_OUTPUT" | grep -qiE '403|401|authentication|password'; then
+      cat <<EOF
+Auth failure. GitHub/GitLab require a Personal Access Token (not a
+password) for HTTPS git operations. If you have an SSH key registered,
+use the SSH form instead:
        git@github.com:owner/repo.git
        git@gitlab.com:owner/repo.git
     Retry: git remote remove origin && ./scripts/initialize.sh
 
 EOF
+    else
+      cat <<EOF
+Push failed for a reason I don't recognize. Possibilities:
+  - Repo doesn't exist, or you don't have write access.
+  - SSH key not configured for this host.
+  - Network / firewall issue.
+Read the output above and adjust. Then:
+    git remote remove origin && ./scripts/initialize.sh
+
+EOF
+    fi
     exit 1
   fi
   echo "✓ Remote set up"
