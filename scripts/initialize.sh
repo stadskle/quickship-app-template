@@ -60,29 +60,26 @@ echo "✓ AWS authenticated"
 # ---- git remote -------------------------------------------------------------
 
 if ! git remote get-url origin >/dev/null 2>&1; then
-  cat <<EOF
+  cat <<EOF >&2
 
-This app needs a git remote before it can be deployed. The orchestrator
-records 'app_name -> repo URL' so two repos can't claim the same name.
+Error: this app has no git remote 'origin'.
 
-Steps:
-  1. Create an EMPTY repository on your git host (GitHub, GitLab, Bitbucket,
-     self-hosted — any host your platform admin has set up). Don't initialize
-     it with a README, LICENSE, or .gitignore — must be completely empty.
+Set one up in your terminal first (this script is non-interactive on
+purpose so Claude / CI can drive it):
 
-  2. Paste the URL below. Either form works:
-       https://gitlab.com/your-org/your-app.git
-       git@github.com:your-org/your-app.git
-       (or any HTTPS / SSH form)
+  1. Create an EMPTY repo on your git host — GitHub, GitLab, Bitbucket,
+     self-hosted, anything. Don't initialize with a README/LICENSE/.gitignore.
 
+  2. Wire it up locally:
+       git remote add origin <URL>
+       git push -u origin main
+
+  3. Re-run ./scripts/initialize.sh.
+
+(The bootstrap step normally prompts for this once during scaffold —
+this fail-path means it was skipped or this is an older scaffold.)
 EOF
-  while [[ -z "${REPO_URL:-}" ]]; do
-    read -r -p "Repository URL: " REPO_URL
-  done
-  git remote add origin "$REPO_URL"
-  echo "→ Pushing initial commit..."
-  git push -u origin main
-  echo "✓ Remote set up"
+  exit 1
 fi
 
 REPO_URL=$(git remote get-url origin)
@@ -105,21 +102,30 @@ if [[ -z "$CURRENT_GIT_REPO" ]]; then
   fi
 fi
 
-# ---- warn on uncommitted / unpushed work ------------------------------------
+# ---- gate on uncommitted work -----------------------------------------------
+#
+# Default: refuse to deploy with uncommitted changes (audit / surprise
+# protection). Override with `ALLOW_DIRTY=1 ./scripts/initialize.sh` for
+# the "I'm just testing, I know what I'm doing" case.
+if [[ -n "$(git status --porcelain)" ]] && [[ "${ALLOW_DIRTY:-0}" != "1" ]]; then
+  cat <<EOF >&2
 
-if [[ -n "$(git status --porcelain)" ]]; then
-  echo
-  echo "⚠ Uncommitted changes in your working tree:"
-  git status --short
-  echo
-  echo "  The orchestrator deploys what's currently in your working tree (NOT"
-  echo "  your remote). Uncommitted changes WILL be deployed but won't be in"
-  echo "  the git history — fine for testing, bad for production audit."
-  echo
-  if ! confirm "Proceed anyway?"; then
-    echo "Cancelled. Commit (and push) your changes first, then re-run."
-    exit 1
-  fi
+Error: uncommitted changes in your working tree:
+
+$(git status --short)
+
+The orchestrator deploys what's in your working tree (NOT your remote),
+so uncommitted changes ship without an audit trail. Refusing to proceed
+by default.
+
+Either:
+  - Commit (and push) your changes:
+      git add -A && git commit -m "..." && git push
+    Then re-run ./scripts/initialize.sh.
+  - Or, if you really mean it (testing, can lose work):
+      ALLOW_DIRTY=1 ./scripts/initialize.sh
+EOF
+  exit 1
 fi
 
 # ---- look up orchestrator ---------------------------------------------------

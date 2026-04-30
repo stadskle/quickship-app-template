@@ -19,7 +19,7 @@ Cloudflare Access authenticates the user before any request reaches the app. The
 - In production (header present): returns `{"email": "<user>"}`.
 - Locally (header missing because Cloudflare isn't in the path): returns `{"email": "dev@local"}` as a fixture.
 
-> ⚠ The local auth fixture trusts whatever `Cf-Access-Authenticated-User-Email` header it sees, falling back to `dev@local` if absent. That's safe on a single-developer laptop where docker-compose is reachable only from `localhost`. **Don't expose port 8000 publicly** (no `ngrok`, no router port-forward, no `--host 0.0.0.0` outside the container) — anyone reaching it could spoof any email by setting that header. For "let a teammate try my local app", use `/initialize` instead and Cloudflare Access will gate it properly.
+> ⚠ The local auth fixture trusts whatever `Cf-Access-Authenticated-User-Email` header it sees, falling back to `dev@local` if absent. That's safe on a single-developer laptop where docker-compose is reachable only from `localhost`. **Don't expose port 8000 publicly** (no `ngrok`, no router port-forward, no `--host 0.0.0.0` outside the container) — anyone reaching it could spoof any email by setting that header. For "let a teammate try my local app", use `./scripts/initialize.sh` instead and Cloudflare Access will gate it properly.
 
 **Email is the identity.** It's stable across sessions, so use it directly as the foreign key on user-owned rows. Don't invent a `user_id` table or UUID — the email *is* the user ID.
 
@@ -178,7 +178,7 @@ The `-- rollback:` section's value is:
 
 If you mean "I don't want to use this capability anymore but keep the data": don't disable the flag. Just stop calling the helper from app code. The capability stays provisioned, costs nothing meaningful, and the data is preserved.
 
-If you genuinely want to delete data: disable the flag, but understand it's irreversible. The `quickship-reviewer` agent will block `/initialize` until you acknowledge.
+If you genuinely want to delete data: disable the flag, but understand it's irreversible. The `quickship-reviewer` agent will block `./scripts/initialize.sh` until you acknowledge.
 
 ## Helper imports — use these, not raw boto3
 
@@ -203,7 +203,7 @@ If you find yourself writing `import boto3` in a route file, **stop and check wh
 
 ## Enabling capabilities
 
-Apps start with **all capabilities off** — bootstrap doesn't ask the user upfront because they don't know what they'll need. Your job (Claude) is to enable each capability the *first* time you realize it's needed for the feature being built, by editing `infra/terraform.tfvars` and then running `/initialize`.
+Apps start with **all capabilities off** — bootstrap doesn't ask the user upfront because they don't know what they'll need. Your job (Claude) is to enable each capability the *first* time you realize it's needed for the feature being built, by editing `infra/terraform.tfvars` and then running `./scripts/initialize.sh`.
 
 The platform supports exactly these five capabilities. Don't suggest other AWS services (RDS, ElastiCache, SQS, Step Functions, EventBridge, …) — they require a platform-admin discussion, not something a single app can self-serve.
 
@@ -215,7 +215,7 @@ The platform supports exactly these five capabilities. Don't suggest other AWS s
 | **SES email** | `email_enabled = true` | `EMAIL_SENDER_DOMAIN` | Sending transactional email (signup confirmations, alerts). Use `app.lib.email`. |
 | **Bedrock AI** | `ai_models_enabled = true` | (no env var; IAM grant only) | LLM calls. Use `app.lib.ai`. |
 
-**Workflow when enabling**: edit `terraform.tfvars`, run `/initialize`. The deploy creates the cloud resources (DB role+database, S3 bucket, etc.) and re-deploys the Lambda with the new env vars. Existing app code doesn't need to change — the helper just starts working in production. Locally, the helper continues using its fallback (postgres in docker-compose, `./uploads/`, SQLite, stderr) until you set the matching env vars in your shell or `docker-compose.yml`.
+**Workflow when enabling**: edit `terraform.tfvars`, run `./scripts/initialize.sh`. The deploy creates the cloud resources (DB role+database, S3 bucket, etc.) and re-deploys the Lambda with the new env vars. Existing app code doesn't need to change — the helper just starts working in production. Locally, the helper continues using its fallback (postgres in docker-compose, `./uploads/`, SQLite, stderr) until you set the matching env vars in your shell or `docker-compose.yml`.
 
 > ⚠ **Dev/prod parity caveat**: docker-compose always boots Postgres locally, even when `database_enabled = false`. So `db.connection()` works locally but raises in production with that flag off. If you call `db.connection()` and don't set `database_enabled = true`, you'll only discover the gap on first deploy. Best practice: only call DB helpers if you've also enabled the matching capability in `terraform.tfvars`.
 
@@ -229,7 +229,7 @@ For any value the app needs at runtime that should NOT be in source (API keys, s
    ```hcl
    secret_names = ["stripe_api_key", "sendgrid_token"]
    ```
-2. **First deploy creates the placeholder.** Run `/initialize`. Terraform creates an SSM SecureString at `/<prefix>/apps/<app>/<name>` with value `"REPLACE_ME"` and injects it into the Lambda as env var `<NAME_UPPERCASE>` (e.g. `STRIPE_API_KEY`). The app deploys but `secrets.get("stripe_api_key")` will raise a clear error if called.
+2. **First deploy creates the placeholder.** Run `./scripts/initialize.sh`. Terraform creates an SSM SecureString at `/<prefix>/apps/<app>/<name>` with value `"REPLACE_ME"` and injects it into the Lambda as env var `<NAME_UPPERCASE>` (e.g. `STRIPE_API_KEY`). The app deploys but `secrets.get("stripe_api_key")` will raise a clear error if called.
 3. **Set the real value.** Tell the user to run (or do it via the AWS console under Systems Manager → Parameter Store):
    ```bash
    aws ssm put-parameter \
@@ -240,7 +240,7 @@ For any value the app needs at runtime that should NOT be in source (API keys, s
      --region eu-central-1
    ```
    The exact path to use comes from `terraform output` after step 2 (or substitute `<prefix>` and `<app>` from the values in `terraform.tfvars`).
-4. **Re-deploy.** Run `/initialize` again. Terraform re-reads SSM and pushes the new value into the Lambda env.
+4. **Re-deploy.** Run `./scripts/initialize.sh` again. Terraform re-reads SSM and pushes the new value into the Lambda env.
 
 In app code:
 
@@ -252,7 +252,7 @@ stripe_key = secrets.get("stripe_api_key")
 
 Locally, just set the env var (`export STRIPE_API_KEY=sk_test_...` in your shell, or add it under `services.backend.environment` in `docker-compose.yml`). Same code path as production.
 
-**Rotation** is the same dance starting from step 3: `put-parameter --overwrite`, then `/initialize`. The new value reaches Lambda on the next apply.
+**Rotation** is the same dance starting from step 3: `put-parameter --overwrite`, then `./scripts/initialize.sh`. The new value reaches Lambda on the next apply.
 
 **Security note**: secrets land in the Lambda env config in cleartext (visible to anyone with `lambda:GetFunctionConfiguration`). For this stack's threat model that's acceptable — same as `DATABASE_URL` — but don't put bank-grade secrets here. Anything more sensitive belongs in a dedicated KMS-encrypted env or a runtime SSM lookup, neither of which the platform supports today.
 
@@ -369,9 +369,9 @@ The backend container reads creds from the mounted `~/.aws` and exercises real A
 - **Add a route**: create `backend/app/routes/<name>.py`, register in `app/main.py`. Pattern: `@router.get("/api/...")` with `Depends(current_user)`.
 - **Add a migration**: create `backend/migrations/NNNN_description.sql` with the next sequential number. Plain SQL with `-- migrate:` and `-- rollback:` sections.
 - **Run locally**: `docker compose up`.
-- **Deploy infra changes** (anything in `infra/`): `/initialize`. Zips the working tree, uploads to the platform's orchestrator bucket, starts a CodeBuild that runs `terraform apply` with admin-level perms (the dev's own IAM user does NOT have apply perms — by design). Tails the logs until the build finishes.
-- **Ship code changes**: `git push`. The per-app pipeline (created on first `/initialize`) detects, builds, and updates the Lambda. Watch progress at `terraform output -raw pipeline_console_url`.
-- **Destroy an app entirely**: `/destroy`. Same orchestrator path with `MODE=destroy`. Strong confirmation required — irreversible.
+- **Deploy infra changes** (anything in `infra/`): `./scripts/initialize.sh`. Zips the working tree, uploads to the platform's orchestrator bucket, starts a CodeBuild that runs `terraform apply` with admin-level perms (the dev's own IAM user does NOT have apply perms — by design). Tails the logs until the build finishes.
+- **Ship code changes**: `git push`. The per-app pipeline (created on first `./scripts/initialize.sh`) detects, builds, and updates the Lambda. Watch progress at `terraform output -raw pipeline_console_url`.
+- **Destroy an app entirely**: `./scripts/destroy.sh`. Same orchestrator path with `MODE=destroy`. Strong confirmation required — irreversible.
 - **Inspect prod DB**: `psql "$(aws --profile __AWS_PROFILE__ ssm get-parameter --name /__AWS_PROFILE__/apps/__APP_NAME__/database_url --with-decryption --query Parameter.Value --output text --region eu-central-1)"`.
 
 ## Changing the Python version (rare)

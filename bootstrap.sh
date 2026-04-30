@@ -214,6 +214,38 @@ Then commit manually:
 EOF
 fi
 
+# Optional one-shot remote setup. /initialize is non-interactive (so Claude
+# can drive it without TTY), so the only good place to interactively prompt
+# for a remote URL is here in bootstrap.sh — which the user runs in their
+# terminal. Skipping is fine; they can do `git remote add` manually later.
+echo
+echo "Where will this app live? Create an EMPTY repository on your git host"
+echo "(GitHub, GitLab, Bitbucket, self-hosted — anything). Don't initialize"
+echo "it with README / LICENSE / .gitignore — must be completely empty."
+echo
+echo "Paste the URL here. Either form works:"
+echo "    https://gitlab.com/your-org/your-app.git"
+echo "    git@github.com:your-org/your-app.git"
+echo "(Leave blank to skip; you can wire it up later before running /initialize.)"
+read -r -p "Repository URL [skip]: " app_repo_url
+if [[ -n "$app_repo_url" ]]; then
+  if git remote get-url origin >/dev/null 2>&1; then
+    git remote set-url origin "$app_repo_url"
+  else
+    git remote add origin "$app_repo_url"
+  fi
+  echo "→ Pushing initial commit..."
+  if git push -u origin main 2>/dev/null; then
+    echo "✓ Remote set up"
+  else
+    echo "⚠️  Push failed. Common reasons:"
+    echo "    - Repo doesn't exist or you don't have write access"
+    echo "    - Repo isn't empty (initialized with README/LICENSE/.gitignore)"
+    echo "    - SSH key not configured for this host"
+    echo "  Fix and run 'git push -u origin main' yourself before /initialize."
+  fi
+fi
+
 cat <<EOF
 
 ✅ Bootstrap complete.
@@ -226,10 +258,12 @@ Next steps:
 2. Verify the scaffold runs locally (optional):
        docker compose up
 
-3. When you're ready to ship, ask Claude "/initialize". It will walk
-   you through creating your app's repo (GitHub or GitLab — whatever
-   your platform admin set up), pushing the code, and provisioning the
-   cloud resources. After that, every git push ships code automatically
-   via the per-app pipeline.
+3. When you're ready to ship, run:
+       ./scripts/initialize.sh
+   Provisions all your cloud resources (Lambda, CloudFront, pipeline,
+   etc.) — takes ~10 minutes for the first deploy. After that, every
+   git push ships code automatically via the per-app pipeline.
+
+   To destroy the app later: ./scripts/destroy.sh (irreversible).
 
 EOF
