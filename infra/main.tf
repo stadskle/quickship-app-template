@@ -12,7 +12,7 @@ module "app" {
     aws.us_east_1 = aws.us_east_1
   }
 
-  app_name           = "__APP_NAME__"
+  app_name           = var.app_name
   allowed_principals = var.allowed_principals
 
   # Capabilities

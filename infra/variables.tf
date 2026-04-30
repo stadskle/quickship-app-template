@@ -1,3 +1,8 @@
+variable "app_name" {
+  type        = string
+  description = "App identifier — drives resource names, the subdomain, the tfstate path. Set by bootstrap.sh from the folder name; rename here would re-create the entire app (data loss)."
+}
+
 variable "aws_profile" {
   type        = string
   description = "Local AWS profile name used by terraform's AWS provider. Same as the platform's name_prefix (per convention). Set by bootstrap.sh; you generally shouldn't edit by hand."
