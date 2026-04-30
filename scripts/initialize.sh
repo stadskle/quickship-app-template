@@ -59,6 +59,37 @@ echo "✓ AWS authenticated"
 
 # ---- git remote -------------------------------------------------------------
 
+# ---- gate on PRE-EXISTING uncommitted work ----------------------------------
+#
+# Default: refuse to deploy with the user's own uncommitted changes (audit /
+# surprise protection). Override with `ALLOW_DIRTY=1 ./scripts/initialize.sh`.
+# Note: this runs BEFORE the script's own tfvars edits, so its own changes
+# don't trip this gate — they get auto-committed below.
+if [[ -n "$(git status --porcelain)" ]] && [[ "${ALLOW_DIRTY:-0}" != "1" ]]; then
+  cat <<EOF >&2
+
+Error: uncommitted changes in your working tree:
+
+$(git status --short)
+
+The orchestrator deploys what's in your working tree (NOT your remote),
+so uncommitted changes ship without an audit trail. Refusing to proceed
+by default.
+
+Either:
+  - Commit (and push) your changes:
+      git add -A && git commit -m "..." && git push
+    Then re-run ./scripts/initialize.sh.
+  - Or, if you really mean it (testing, can lose work):
+      ALLOW_DIRTY=1 ./scripts/initialize.sh
+EOF
+  exit 1
+fi
+
+# ---- remote setup -----------------------------------------------------------
+
+REMOTE_JUST_ADDED=false
+
 if ! git remote get-url origin >/dev/null 2>&1; then
   cat <<EOF
 
@@ -83,28 +114,13 @@ EOF
   done
   echo "→ Adding origin: $repo_url_input"
   git remote add origin "$repo_url_input"
-  echo "→ Pushing initial commit..."
-  if ! git push -u origin main; then
-    echo
-    echo "Push failed. Common causes:"
-    echo "  - Repo doesn't exist, or you don't have write access."
-    echo "  - Repo isn't empty (was initialized with README/LICENSE/.gitignore)."
-    echo "  - HTTPS auth: GitHub/GitLab require a Personal Access Token,"
-    echo "    not a password, for HTTPS git operations. If you have an SSH"
-    echo "    key registered, use the SSH form instead:"
-    echo "       git@github.com:owner/repo.git"
-    echo "       git@gitlab.com:owner/repo.git"
-    echo "    Retry: git remote remove origin && ./scripts/initialize.sh"
-    echo
-    exit 1
-  fi
-  echo "✓ Remote set up"
+  REMOTE_JUST_ADDED=true
 fi
 
 REPO_URL=$(git remote get-url origin)
 echo "→ Repo: $REPO_URL"
 
-# ---- update tfvars's git_repo if blank --------------------------------------
+# ---- update tfvars's git_repo if blank, auto-commit if changed --------------
 
 CURRENT_GIT_REPO=$(grep -E '^git_repo\b' infra/terraform.tfvars | head -1 | cut -d'"' -f2 || echo "")
 
@@ -119,32 +135,42 @@ if [[ -z "$CURRENT_GIT_REPO" ]]; then
   else
     sed -i "s|^git_repo *= *\".*\"|git_repo = \"$parsed\"|" infra/terraform.tfvars
   fi
+
+  # Auto-commit the single tfvars change so the working tree stays clean
+  # for the orchestrator. Avoids leaving the user with a "you're dirty
+  # because the script edited a file" surprise.
+  echo "→ Committing the tfvars update..."
+  git add infra/terraform.tfvars
+  git commit -q -m "init: set git_repo from origin URL"
 fi
 
-# ---- gate on uncommitted work -----------------------------------------------
-#
-# Default: refuse to deploy with uncommitted changes (audit / surprise
-# protection). Override with `ALLOW_DIRTY=1 ./scripts/initialize.sh` for
-# the "I'm just testing, I know what I'm doing" case.
-if [[ -n "$(git status --porcelain)" ]] && [[ "${ALLOW_DIRTY:-0}" != "1" ]]; then
-  cat <<EOF >&2
+# ---- push (initial push if remote was just added; otherwise skip) -----------
 
-Error: uncommitted changes in your working tree:
+if [[ "$REMOTE_JUST_ADDED" == "true" ]]; then
+  echo "→ Pushing initial commit..."
+  if ! git push -u origin main; then
+    cat <<EOF
 
-$(git status --short)
+Push failed. Common causes:
+  - Repo doesn't exist, or you don't have write access.
+  - Repo isn't empty (was initialized with README/LICENSE/.gitignore).
+  - HTTPS auth: GitHub/GitLab require a Personal Access Token, not a
+    password, for HTTPS git operations. If you have an SSH key registered,
+    use the SSH form instead:
+       git@github.com:owner/repo.git
+       git@gitlab.com:owner/repo.git
+    Retry: git remote remove origin && ./scripts/initialize.sh
 
-The orchestrator deploys what's in your working tree (NOT your remote),
-so uncommitted changes ship without an audit trail. Refusing to proceed
-by default.
-
-Either:
-  - Commit (and push) your changes:
-      git add -A && git commit -m "..." && git push
-    Then re-run ./scripts/initialize.sh.
-  - Or, if you really mean it (testing, can lose work):
-      ALLOW_DIRTY=1 ./scripts/initialize.sh
 EOF
-  exit 1
+    exit 1
+  fi
+  echo "✓ Remote set up"
+elif [[ -n "$(git log @{u}.. --oneline 2>/dev/null)" ]]; then
+  # Remote exists but local is ahead — push the auto-commit (and any other
+  # local commits) before deploying so remote is consistent with what the
+  # orchestrator deploys.
+  echo "→ Pushing local commits..."
+  git push
 fi
 
 # ---- look up orchestrator ---------------------------------------------------
