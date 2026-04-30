@@ -172,6 +172,37 @@ for f in "${files[@]}"; do
   fi
 done
 
+# Multi-line substitution for the docker-compose backend's capability env
+# vars. Generates KV_TABLE_<UPPER> for each DynamoDB table and STORAGE_BUCKET
+# if storage_enabled, all pointing at the `-localdev` AWS twins provisioned
+# by the quickship module.
+python3 - <<PY
+import json, pathlib
+
+tables = json.loads('''$dynamodb_tables_json''')
+storage_enabled = "$storage_enabled" == "true"
+app_name = "$app_name"
+account_id = "$aws_account_id"
+prefix = "${aws_profile}-$app_name" if False else f"$aws_profile-$app_name"
+# (Above only used inside resource_name pattern from quickship module:
+# "<name_prefix>-<app_name>". Local-dev twin appends "-localdev".)
+# The quickship module's resource names: "<name_prefix>-<app_name>-<table>"
+# and "<name_prefix>-<app_name>-storage-<account>".
+resource_prefix = f"$aws_profile-$app_name"
+
+lines = []
+for t in tables:
+    upper = t.upper().replace("-", "_")
+    lines.append(f"      KV_TABLE_{upper}: {resource_prefix}-{t}-localdev")
+if storage_enabled:
+    lines.append(f"      STORAGE_BUCKET: {resource_prefix}-storage-{account_id}-localdev")
+
+block = "\n".join(lines) if lines else "      # (no capabilities enabled in terraform.tfvars yet — helpers use SQLite / uploads/ fallbacks)"
+
+p = pathlib.Path("docker-compose.yml")
+p.write_text(p.read_text().replace("__CAPABILITY_ENV_VARS__", block))
+PY
+
 # Strip <!-- TEMPLATE-ONLY:START --> ... <!-- TEMPLATE-ONLY:END --> blocks
 # from the README. These hold the "how to bootstrap from the template"
 # instructions that don't apply once the template has been bootstrapped.

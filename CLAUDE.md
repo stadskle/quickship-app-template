@@ -192,12 +192,14 @@ If you genuinely want to delete data: disable the flag, but understand it's irre
 | AI (Bedrock) | `app.lib.ai` | `ai.generate(prompt)` for one-shot, `ai.chat(messages)` for multi-turn |
 | Secrets | `app.lib.secrets` | `secrets.get("stripe_api_key")` — see "Adding a secret" below |
 
-Every helper has a localhost fallback so the same code path runs in dev and prod:
-- DB → docker-compose Postgres
-- Storage → `./uploads/` on the host
-- KV → SQLite at `./local.db`
-- Email → printed to stderr
-- AI → real AWS Bedrock with your dev credentials (no local mock)
+Every helper has a localhost fallback or a real-AWS-against-a-localdev-twin so the same code path runs in dev and prod:
+- DB → docker-compose Postgres (separate from prod's Neon)
+- Storage → real S3 against a per-app `*-localdev` bucket (free; provisioned alongside prod by the `quickship` module). Falls back to `./uploads/` on host disk if `STORAGE_BUCKET` env var isn't set (greenfield, before `/initialize`).
+- KV → real DynamoDB against per-app `*-localdev` tables (free; provisioned alongside prod). Falls back to SQLite at `./local.db` if `KV_TABLE_*` env vars aren't set.
+- Email → printed to stderr (you don't want local dev to send real email).
+- AI → real AWS Bedrock with your dev credentials (no local mock; Nova Lite is cheap).
+
+**Why localdev-twin for S3 + DynamoDB but not Postgres?** Empty DynamoDB tables and S3 buckets cost $0; Neon doesn't have a free-twin model. The DynamoDB/S3 twins give you real semantics (TTL, conditional writes, presigned URLs) without paying or risking prod data.
 
 If you find yourself writing `import boto3` in a route file, **stop and check whether a helper exists**. The helpers handle local-dev fallbacks, IAM scoping, and platform conventions. Bypassing them creates dev/prod drift.
 
