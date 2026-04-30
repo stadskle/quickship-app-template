@@ -26,6 +26,42 @@ Read CLAUDE.md at the repo root first to refresh on the conventions, then check 
 - **Raw boto3 in route handlers**: `import boto3` or `boto3.client(...)` in `backend/app/routes/*.py`. Helpers themselves may use boto3 — that's expected.
 - **`Authorization` header reads**: anything checking `Authorization` directly. Cloudflare Access doesn't use this header.
 
+## Schema-safety violations (block merge unless explicitly acknowledged)
+
+When a file under `backend/migrations/` is added or modified, scan for these patterns and report. The user is non-technical and will not realize migrations run automatically on next Lambda cold start in production — destructive SQL = data loss with no manual gate.
+
+- **`DROP TABLE`** in `-- migrate:` section → block-merge. Irreversible. The right pattern is the expand-contract: rename to `<table>_deprecated_YYYYMMDD`, ship that, verify nothing reads from it, then drop in a later migration.
+- **`DROP COLUMN`** in `-- migrate:` section → block-merge. Same reasoning. Two-deploy expand-contract: stop writing/reading from the column in app code first, ship; later add a migration that drops it.
+- **`ALTER COLUMN ... TYPE`** with a non-trivial conversion (`TEXT → INTEGER`, `VARCHAR → TIMESTAMP`, etc.) → warn. Type conversions can fail mid-migration on bad rows or lose precision. Recommend: add new column with new type, backfill, drop old, rename.
+- **`ALTER COLUMN ... SET NOT NULL`** without an accompanying `SET DEFAULT` (or a backfill `UPDATE` earlier in the same file) → warn. Existing NULL rows will fail the constraint and the migration will half-apply, leaving the DB in an awkward state.
+- **`RENAME COLUMN`** or **`RENAME TABLE`** → warn. Coordinate with app code: deploy a version that reads/writes BOTH names first, then deploy the rename, then deploy a version that uses only the new name. Otherwise you have a window of broken queries.
+- **Multiple structural DDL changes in one file** (more than one of: CREATE/ALTER/DROP) → warn. Harder to reason about partial failure.
+
+For each violation/warning, point at the safe pattern in CLAUDE.md "Safe migration recipes".
+
+## Migration rollback-section requirement (block merge if missing)
+
+Yoyo supports `-- migrate:` and `-- rollback:` markers in SQL migration files. Every new migration file must have BOTH sections, even if the rollback is `-- rollback:` followed by a comment explaining why rollback is impossible (e.g. data loss).
+
+- File missing `-- migrate:` section → block-merge ("malformed migration").
+- File missing `-- rollback:` section → block-merge ("every migration ships with a rollback; if the change is irreversible, the rollback section should be a comment explaining why — explicit irreversibility is better than implicit").
+- File with empty `-- rollback:` section (no SQL, no comment) → block-merge (same).
+
+Rollback in production is rare — the default recovery for a bad migration is to roll forward (write a new migration that reverses the schema). The rollback section's main value is local-dev testability and forcing the author to think "could I undo this?"
+
+## Infra-safety violations (block /deploy unless explicitly acknowledged)
+
+When `infra/terraform.tfvars` or `infra/main.tf` has been modified, scan the diff for changes that will destroy data or recreate the entire app. The user typing `/deploy` may not realize the impact.
+
+- **`database_enabled: true → false`** → block-merge with explicit warning. This destroys the Neon role + database. ALL DATA IS LOST. If the intent is genuinely "I no longer want this app to have a database", the user must type the app name to acknowledge.
+- **`storage_enabled: true → false`** → block-merge. Destroys the S3 bucket and all stored objects.
+- **An entry removed from `dynamodb_tables = [...]`** → block-merge. Destroys that DynamoDB table and all rows.
+- **`ai_models_enabled: true → false`** → soft warn. Just removes IAM grant; no data lost. But code that uses `app.lib.ai` will fail in production.
+- **`email_enabled: true → false`** → soft warn. Just removes IAM grant.
+- **`app_name` changed** → block-merge. Destroys the entire app and recreates with the new name. New domain, new Lambda, new everything. All data lost.
+- **`developers` entry removed** → soft note. The named developer loses runtime/debug access to this app's resources.
+- **`secret_names` entry removed** → block-merge if there's app code that calls `secrets.get(<name>)` for the removed name.
+
 ## Dependency hygiene (block merge if stale)
 
 When `requirements.txt` or `package.json` has been edited:
@@ -54,6 +90,12 @@ Format as:
 >
 > **Platform violations** (block merge)
 > - <file:line>: <issue>. Fix: <suggestion>.
+>
+> **Schema-safety violations** (block merge)
+> - <file:line>: <issue>. The safe pattern: <recipe from CLAUDE.md>.
+>
+> **Infra-safety violations** (block /deploy)
+> - <file:line>: <change> → <consequence>. Confirm with the user explicitly before proceeding.
 >
 > **Dependency issues** (block merge if stale)
 > - <package>: pinned `x.y.z`, latest is `a.b.c` (released YYYY-MM-DD). Bump unless changelog has a blocker.

@@ -60,6 +60,125 @@ Health endpoints can omit the dep.
 - **Migrations**: drop SQL files in `backend/migrations/`, named `NNNN_description.sql` (e.g., `0001_initial.sql`, `0002_notes_table.sql`). Yoyo runs them on Lambda cold start; locally they run on backend container startup.
 - **Never `CREATE TABLE` from app code.** Always migrations.
 - **Schema is yours**: relational, JSONB, hybrid — pick what fits the feature.
+- **Every migration has both a `-- migrate:` and a `-- rollback:` section.** Yoyo's format. The `quickship-reviewer` agent enforces this. If a migration is genuinely irreversible (e.g., `DROP COLUMN` loses data forever), the rollback section is a comment explaining why — explicit irreversibility is the rule.
+
+## Safe migration recipes
+
+Migrations run automatically on the next Lambda cold start in production. There is no manual gate, no preview environment, no "are you sure?" prompt. Once a migration is in `main` and `git push`-ed, the next request to your app applies it. **Treat schema changes with the same care as a `terraform apply` against a database.**
+
+The `quickship-reviewer` agent flags destructive SQL and asks for explicit acknowledgement; these recipes are how to do destructive things safely.
+
+### Adding a column
+
+**Nullable column** — safe in one migration:
+```sql
+-- migrate:
+ALTER TABLE notes ADD COLUMN priority TEXT;
+
+-- rollback:
+ALTER TABLE notes DROP COLUMN priority;
+```
+
+**NOT NULL column** — must be done in three migrations (expand-contract):
+```sql
+-- 0007_add_priority.sql
+-- migrate:
+ALTER TABLE notes ADD COLUMN priority TEXT;
+-- rollback:
+ALTER TABLE notes DROP COLUMN priority;
+
+-- 0008_backfill_priority.sql
+-- migrate:
+UPDATE notes SET priority = 'normal' WHERE priority IS NULL;
+-- rollback:
+-- intentionally empty: undoing a backfill is a no-op data-wise.
+
+-- 0009_priority_required.sql
+-- migrate:
+ALTER TABLE notes ALTER COLUMN priority SET DEFAULT 'normal';
+ALTER TABLE notes ALTER COLUMN priority SET NOT NULL;
+-- rollback:
+ALTER TABLE notes ALTER COLUMN priority DROP NOT NULL;
+ALTER TABLE notes ALTER COLUMN priority DROP DEFAULT;
+```
+
+This sequence guarantees no row ever fails the constraint mid-deploy.
+
+### Renaming a column
+
+Three deploys, never just one. The middle deploy keeps both columns visible.
+
+```sql
+-- 00NN_add_new_name.sql
+-- migrate:
+ALTER TABLE notes ADD COLUMN body_v2 TEXT;
+UPDATE notes SET body_v2 = body;
+-- rollback:
+ALTER TABLE notes DROP COLUMN body_v2;
+```
+
+Then ship app code that reads `body_v2` and writes to BOTH `body` and `body_v2`. Then:
+
+```sql
+-- 00NN+1_drop_old_name.sql
+-- migrate:
+ALTER TABLE notes DROP COLUMN body;
+-- rollback:
+-- IRREVERSIBLE: data in 'body' is gone after this. Restore from a Neon backup if needed.
+```
+
+Then ship app code that reads/writes only `body_v2`. The interim deploy is what makes the rename safe — without it, you have a window where the new code is reading a column that doesn't exist yet (or the old code is writing to a column that no longer exists).
+
+### Dropping a column
+
+Same expand-contract: stop using it in app code first, ship that, then drop.
+
+```sql
+-- 00NN_drop_legacy_field.sql
+-- migrate:
+ALTER TABLE notes DROP COLUMN legacy_status;
+-- rollback:
+-- IRREVERSIBLE: data in 'legacy_status' is gone. The column was already
+-- unused by app code as of deploy <YYYY-MM-DD>; the data was confirmed
+-- non-essential before this migration shipped.
+```
+
+The comment in the rollback section is the audit trail — explicit acknowledgement that the data loss was intentional.
+
+### Changing a column type
+
+Don't `ALTER COLUMN ... TYPE` directly unless the conversion is trivial and tested. Safer:
+
+```sql
+-- 00NN_add_new_typed_column.sql
+-- migrate:
+ALTER TABLE notes ADD COLUMN priority_int INTEGER;
+UPDATE notes SET priority_int = CASE priority
+  WHEN 'low' THEN 1
+  WHEN 'normal' THEN 2
+  WHEN 'high' THEN 3
+END;
+-- rollback:
+ALTER TABLE notes DROP COLUMN priority_int;
+```
+
+Then app code transitions to read/write the new column, then drop the old.
+
+### Production rollback policy
+
+**Default: roll forward.** If a migration shipped a bad change, write a NEW migration that fixes it. Don't try to `yoyo rollback` against production — by the time you'd run it, app code has already written rows that the rollback can't reason about. Rollback in production is a last-resort manual operation, not a routine part of recovery.
+
+The `-- rollback:` section's value is:
+1. Local-dev testability (you can `yoyo rollback` to wipe a migration during iteration).
+2. Forcing the author to think "is this reversible?" — half of bad migrations are caught by failing to write a sensible rollback.
+
+### Capability disable = data loss
+
+`database_enabled: true → false` in `infra/terraform.tfvars` means `terraform destroy` on the Neon role and database. **All data gone.** Same for `storage_enabled: true → false` (S3 bucket + objects) and removing entries from `dynamodb_tables` (table + rows).
+
+If you mean "I don't want to use this capability anymore but keep the data": don't disable the flag. Just stop calling the helper from app code. The capability stays provisioned, costs nothing meaningful, and the data is preserved.
+
+If you genuinely want to delete data: disable the flag, but understand it's irreversible. The `quickship-reviewer` agent will block `/deploy` until you acknowledge.
 
 ## Helper imports — use these, not raw boto3
 
