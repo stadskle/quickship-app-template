@@ -77,17 +77,25 @@ Steps:
 EOF
   while [[ -z "${repo_url_input:-}" ]]; do
     read -r -p "Repository URL: " repo_url_input
+    # Strip trailing whitespace, '#' (Markdown-link copy artefact),
+    # trailing slash, and surrounding quotes if any.
+    repo_url_input=$(echo "$repo_url_input" | sed -E 's/[[:space:]#]+$//; s|/$||; s/^[\"'"'"']//; s/[\"'"'"']$//')
   done
+  echo "→ Adding origin: $repo_url_input"
   git remote add origin "$repo_url_input"
   echo "→ Pushing initial commit..."
   if ! git push -u origin main; then
     echo
-    echo "Push failed. Common reasons:"
-    echo "  - Repo doesn't exist, or no write access"
-    echo "  - Repo isn't empty (was initialized with README/LICENSE/.gitignore)"
-    echo "  - SSH key not configured for this host"
+    echo "Push failed. Common causes:"
+    echo "  - Repo doesn't exist, or you don't have write access."
+    echo "  - Repo isn't empty (was initialized with README/LICENSE/.gitignore)."
+    echo "  - HTTPS auth: GitHub/GitLab require a Personal Access Token,"
+    echo "    not a password, for HTTPS git operations. If you have an SSH"
+    echo "    key registered, use the SSH form instead:"
+    echo "       git@github.com:owner/repo.git"
+    echo "       git@gitlab.com:owner/repo.git"
+    echo "    Retry: git remote remove origin && ./scripts/initialize.sh"
     echo
-    echo "Fix and re-run ./scripts/initialize.sh."
     exit 1
   fi
   echo "✓ Remote set up"
