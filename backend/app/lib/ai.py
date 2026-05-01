@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import os
 
+from fastapi import HTTPException
+
 
 def _default_model() -> str:
     """Compose the regional inference-profile ID for the platform default."""
@@ -52,6 +54,32 @@ def _client():
     return _bedrock_client
 
 
+def _converse(**kwargs):
+    """Call Bedrock Converse and translate AWS error codes into useful HTTP errors.
+
+    Without this, every quota/availability hiccup surfaces as a generic 500
+    in the frontend. Map the two we expect to see in practice — Throttling
+    and ServiceUnavailable — to 429/503 with a human-readable detail.
+    """
+    from botocore.exceptions import ClientError
+
+    try:
+        return _client().converse(**kwargs)
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code == "ThrottlingException":
+            raise HTTPException(
+                status_code=429,
+                detail="AI rate limit hit. If this persists, check the model's token-per-day quota in the AWS Service Quotas console.",
+            ) from e
+        if code == "ServiceUnavailableException":
+            raise HTTPException(
+                status_code=503,
+                detail="AI service is temporarily unavailable. Retry shortly.",
+            ) from e
+        raise
+
+
 def generate(
     prompt: str,
     *,
@@ -70,7 +98,7 @@ def generate(
     if system:
         kwargs["system"] = [{"text": system}]
 
-    resp = _client().converse(**kwargs)
+    resp = _converse(**kwargs)
     return resp["output"]["message"]["content"][0]["text"]
 
 
@@ -104,5 +132,5 @@ def chat(
     if system:
         kwargs["system"] = [{"text": system}]
 
-    resp = _client().converse(**kwargs)
+    resp = _converse(**kwargs)
     return resp["output"]["message"]["content"][0]["text"]
