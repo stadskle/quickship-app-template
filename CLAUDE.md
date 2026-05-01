@@ -396,9 +396,46 @@ The backend container reads creds from the mounted `~/.aws` and exercises real A
 - **Add a migration**: create `backend/migrations/NNNN_description.sql` with the next sequential number. Plain SQL with `-- migrate:` and `-- rollback:` sections.
 - **Run locally**: `docker compose up`.
 - **Deploy infra changes** (anything in `infra/`): `./scripts/initialize.sh`. Zips the working tree, uploads to the platform's orchestrator bucket, starts a CodeBuild that runs `terraform apply` with admin-level perms (the dev's own IAM user does NOT have apply perms — by design). Tails the logs until the build finishes.
-- **Ship code changes**: `git push`. The per-app pipeline (created on first `./scripts/initialize.sh`) detects, builds, and updates the Lambda. Watch progress at `terraform output -raw pipeline_console_url`.
+- **Ship code changes**: `git push`, then **spawn a background monitor agent** — see "Watching a deploy" below. The user has IAM access keys but no AWS console access (by platform design — there's no SSO/console session for them), so you are their only window into the pipeline. If you don't surface the result, they're blind.
 - **Destroy an app entirely**: `./scripts/destroy.sh`. Same orchestrator path with `MODE=destroy`. Strong confirmation required — irreversible.
 - **Inspect prod DB**: `psql "$(aws --profile __AWS_PROFILE__ ssm get-parameter --name /__AWS_PROFILE__/apps/__APP_NAME__/database_url --with-decryption --query Parameter.Value --output text --region eu-central-1)"`.
+
+## Watching a deploy
+
+When the user wants to deploy ("push it", "ship this", "deploy", or right after they confirm a change is ready), the flow is:
+
+1. **`git push`** — the pipeline triggers on the push (CodeStarSourceConnection webhook from GitLab/GitHub).
+2. **Spawn a background agent to monitor the pipeline.** The user has IAM access keys but **no AWS console access** — by platform design, there's no SSO permission set / console session for the developer IAM user. That means they cannot click into a CodePipeline view, cannot tail CloudWatch logs in the browser, cannot see anything happening server-side except via you. If you don't watch and report, they sit looking at a terminal with no signal.
+
+Use the Agent tool with `run_in_background: true`. Sample call:
+
+```
+Agent({
+  description: "Monitor __APP_NAME__ deploy",
+  subagent_type: "general-purpose",
+  prompt: `Monitor the latest pipeline execution for '__AWS_PROFILE__-__APP_NAME__'. Loop:
+
+  - Run: aws --profile __AWS_PROFILE__ codepipeline list-pipeline-executions --pipeline-name __AWS_PROFILE__-__APP_NAME__ --max-items 1 --query 'pipelineExecutionSummaries[0].{id:pipelineExecutionId,status:status,started:startTime}' --output json
+  - If status is InProgress or no execution yet, sleep 20 seconds and retry.
+  - If status is Succeeded, report: '✓ Deploy succeeded. App live at https://__APP_NAME__.<apex>' (find apex from infra/terraform.tfvars or the existing 'app_url' Terraform output if you can).
+  - If status is Failed, fetch the last 50 lines from the failed stage's CodeBuild log group:
+      aws --profile __AWS_PROFILE__ logs tail /aws/codebuild/__AWS_PROFILE__-__APP_NAME__ --since 10m --format short
+    Report the failure with a 1-2 sentence diagnosis of the most likely cause based on the log.
+  - Cap at 30 iterations (~10 minutes). Beyond that, report 'still running, check console' and stop.
+
+  Keep output terse — one line on success, error excerpt + diagnosis on failure.`,
+  run_in_background: true
+})
+```
+
+After spawning, tell the user briefly: "Pushed. Watching the pipeline; I'll surface the result when it's done." Then continue with whatever else they asked. Claude Code surfaces the agent's result automatically when it completes — you don't need to poll or check on it.
+
+**When NOT to spawn this agent:**
+- Pure infra-only changes (no app code) — `./scripts/initialize.sh` already tails the orchestrator log directly. The pipeline picks up the same change on push but the orchestrator-tail captures the apply.
+- The user is debugging something locally and explicitly doesn't want to push yet.
+- Multiple pushes in quick succession — only spawn one agent for the latest push; cancel/skip earlier ones.
+
+**Caveat to be honest about:** this works only inside this Claude Code session. If the user closes Claude before the deploy finishes, the background agent dies. For high-stakes deploys, also encourage them to keep the session open or check the pipeline manually afterward.
 
 ## Changing the Python version (rare)
 
