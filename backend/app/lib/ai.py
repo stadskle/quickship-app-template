@@ -5,11 +5,15 @@ No local fallback — Bedrock at dev volumes costs cents and there's no
 useful local emulator. The container needs AWS credentials (mounted from
 the host's `~/.aws` in docker-compose.yml).
 
-The default model is `amazon.nova-lite-v1:0` (the only model the platform
-publishes for eu-central-1 by default — Anthropic Claude isn't yet in
-Frankfurt). To use a different model, the platform operator updates
-`bedrock_models` in the bootstrap; per-app code passes a different
-`model_id` to these functions.
+The default model is `<geo>.amazon.nova-lite-v1:0` where `<geo>` is the
+region's inference-profile prefix (`eu` in eu-*, `us` in us-*, etc.).
+AWS Bedrock requires regional inference-profile IDs for on-demand
+invocation; the bare foundation-model ID returns ValidationException
+"Invocation of model ID ... with on-demand throughput isn't supported."
+
+To use a different model, the platform operator updates `bedrock_models`
+in the bootstrap; per-app code passes a different `model_id` to these
+functions (full inference-profile ID, e.g. `eu.amazon.nova-lite-v1:0`).
 
 Uses Bedrock's `Converse` API which is provider-agnostic — same call
 shape works for Nova, Claude, Titan, Llama, etc.
@@ -19,8 +23,24 @@ from __future__ import annotations
 
 import os
 
+
+def _default_model() -> str:
+    """Compose the regional inference-profile ID for the platform default."""
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or ""
+    if region.startswith("eu-"):
+        prefix = "eu"
+    elif region.startswith("us-"):
+        prefix = "us"
+    elif region.startswith("ap-"):
+        prefix = "apac"
+    else:
+        prefix = ""
+    base = "amazon.nova-lite-v1:0"
+    return f"{prefix}.{base}" if prefix else base
+
+
 _bedrock_client = None
-_DEFAULT_MODEL = os.environ.get("AI_DEFAULT_MODEL", "amazon.nova-lite-v1:0")
+_DEFAULT_MODEL = os.environ.get("AI_DEFAULT_MODEL", _default_model())
 
 
 def _client():
