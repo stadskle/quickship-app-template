@@ -190,6 +190,7 @@ If you genuinely want to delete data: disable the flag, but understand it's irre
 | KV (DynamoDB) | `app.lib.kv` | `kv.put("sessions", key, value, ttl_seconds=3600)`, `kv.get(...)` |
 | Email (SES) | `app.lib.email` | `email.send(to=..., subject=..., body_text=...)` |
 | AI (Bedrock) | `app.lib.ai` | `ai.generate(prompt)` for one-shot, `ai.chat(messages)` for multi-turn |
+| AI (Claude / Anthropic API) | `app.lib.ai_claude` | Same shape as `ai.py`. Direct Anthropic API instead of Bedrock — see "Choosing an AI provider" below |
 | Secrets | `app.lib.secrets` | `secrets.get("stripe_api_key")` — see "Adding a secret" below |
 
 Every helper has a localhost fallback or a real-AWS-against-a-localdev-twin so the same code path runs in dev and prod:
@@ -202,6 +203,65 @@ Every helper has a localhost fallback or a real-AWS-against-a-localdev-twin so t
 **Why localdev-twin for S3 + DynamoDB but not Postgres?** Empty DynamoDB tables and S3 buckets cost $0; Neon doesn't have a free-twin model. The DynamoDB/S3 twins give you real semantics (TTL, conditional writes, presigned URLs) without paying or risking prod data.
 
 If you find yourself writing `import boto3` in a route file, **stop and check whether a helper exists**. The helpers handle local-dev fallbacks, IAM scoping, and platform conventions. Bypassing them creates dev/prod drift.
+
+## Choosing an AI provider
+
+Two helpers ship with the template, both with the same `generate(prompt)` / `chat(messages)` shape:
+
+| | `app.lib.ai` (Bedrock) | `app.lib.ai_claude` (Anthropic API) |
+|---|---|---|
+| **Best for** | "Stay all-in-AWS, billing in one place, data inside the AWS region" | "Just give me Claude Sonnet/Opus quickly, friction-free" |
+| **Setup friction** | Model access (Bedrock console) + Service Quotas (cross-region inference profile defaults at 0 in some regions; can require a support case) | Drop an API key in SSM and go |
+| **Available models** | Whatever's published in your platform region (often a narrow set; eu-central-1 doesn't have Anthropic models on Bedrock as of 2026) | Full Claude family (Haiku / Sonnet / Opus) |
+| **Data residency** | Bound to AWS region | Anthropic API endpoint (US/global) |
+| **Billing** | AWS | Anthropic |
+| **Default model** | `eu.amazon.nova-lite-v1:0` (regional inference profile) | `claude-sonnet-4-7` |
+
+Default to **`ai_claude`** unless the user has stated a constraint that forces Bedrock (in-region data residency, single-AWS-bill mandate). It avoids the entire Bedrock-quota theatre and gives access to Claude models that aren't in the platform region.
+
+### Using `ai_claude`
+
+When `ai_models_enabled = true` is set in `infra/terraform.tfvars`, the platform automatically provisions an SSM SecureString placeholder at `/<prefix>/apps/<app>/anthropic_api_key` and injects it into the Lambda env as `ANTHROPIC_API_KEY`. Initial value is `"REPLACE_ME"`; the helper raises a clear error if used in that state.
+
+Set the real key once, then redeploy:
+
+```bash
+aws --profile __AWS_PROFILE__ ssm put-parameter \
+  --name /__AWS_PROFILE__/apps/__APP_NAME__/anthropic_api_key \
+  --value 'sk-ant-...' \
+  --type SecureString --overwrite \
+  --region __AWS_REGION__
+
+git push  # picks up the new env value (the platform's `data.aws_ssm_parameter` re-reads on apply)
+```
+
+Get the API key from [console.anthropic.com](https://console.anthropic.com/) → API Keys. A free-tier account is plenty for a single internal-tool app's volume.
+
+### Using `ai_claude` from code
+
+```python
+from app.lib import ai_claude
+
+# Single-turn
+text = ai_claude.generate("Summarise these todos: ...")
+
+# Multi-turn
+text = ai_claude.chat([
+    {"role": "user", "content": "Hi"},
+    {"role": "assistant", "content": "Hello! How can I help?"},
+    {"role": "user", "content": "Plan a 3-step migration."},
+])
+
+# With system prompt or different model
+text = ai_claude.generate(
+    "Translate to Norwegian: ...",
+    system="You translate concisely. Norwegian Bokmål.",
+    model_id="claude-haiku-4-5",  # cheaper/faster for simple tasks
+    max_tokens=200,
+)
+```
+
+Errors map to HTTP statuses (429 for rate limit, 503 for connection issues, 504 for timeout) — surface them with `raise` and FastAPI handles the response.
 
 ## Calling the backend from the frontend
 
