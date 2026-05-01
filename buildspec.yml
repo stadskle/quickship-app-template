@@ -69,6 +69,11 @@ phases:
       - pip install --quiet --no-cache-dir -t build/ -r backend/requirements.txt
       - cp -r backend/app build/
       - cp backend/handler.py build/
+      # Yoyo migrations live alongside backend/app and run on cold start
+      # via db.apply_migrations(). Without this copy the migrations
+      # directory is dropped from the Lambda zip and queries against
+      # not-yet-migrated tables fail with UndefinedTable.
+      - if [ -d backend/migrations ]; then cp -r backend/migrations build/; fi
 
       # Frontend build (skipped gracefully if frontend/ absent — keeps the
       # template usable for pure-API apps). `set -e` so npm errors surface
