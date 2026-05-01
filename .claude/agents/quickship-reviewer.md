@@ -25,6 +25,7 @@ Read CLAUDE.md at the repo root first to refresh on the conventions, then check 
 - **Schema in app code**: `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE` strings inside Python files. Schema changes go in `backend/migrations/NNNN_*.sql` only.
 - **Raw boto3 in route handlers**: `import boto3` or `boto3.client(...)` in `backend/app/routes/*.py`. Helpers themselves may use boto3 — that's expected.
 - **`Authorization` header reads**: anything checking `Authorization` directly. Cloudflare Access doesn't use this header.
+- **Raw `fetch()` for non-GET in frontend**: any call like `fetch("/api/...", { method: "POST" | "PUT" | "PATCH" | "DELETE", body: ... })` outside of `frontend/src/lib/api.ts`. CloudFront's OAC requires the client to set `x-amz-content-sha256`; without it Lambda Function URL returns 403 `InvalidSignatureException`. Apps must use `apiPost`/`apiPut`/`apiPatch`/`apiDelete` from `frontend/src/lib/api.ts` (which computes the hash). Raw `fetch()` for GET is fine.
 
 ## Schema-safety violations (block merge unless explicitly acknowledged)
 

@@ -203,6 +203,30 @@ Every helper has a localhost fallback or a real-AWS-against-a-localdev-twin so t
 
 If you find yourself writing `import boto3` in a route file, **stop and check whether a helper exists**. The helpers handle local-dev fallbacks, IAM scoping, and platform conventions. Bypassing them creates dev/prod drift.
 
+## Calling the backend from the frontend
+
+All non-GET requests to this app's backend MUST go through `frontend/src/lib/api.ts`. The plain `fetch()` API works for GET, but **breaks for POST/PUT/PATCH/DELETE-with-body** with HTTP 403 `InvalidSignatureException`.
+
+Why: CloudFront's OAC (Origin Access Control) signs every request to the Lambda Function URL with SigV4. For body-bearing methods, AWS requires the **client** to include `x-amz-content-sha256: <sha256-of-body>` so CloudFront's signature reflects the body. Without that header, the Function URL's signature verification fails before Lambda is invoked. AWS docs: ["If you use PUT or POST methods with your Lambda function URL, your users must compute the SHA256 of the body..."](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-lambda.html)
+
+Use:
+```ts
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete, api } from "./lib/api"
+
+// GET — plain fetch is also fine
+const r = await apiGet("/api/notes")
+
+// POST/PUT/PATCH/DELETE with body
+await apiPost("/api/notes", { body: "hello" })
+await apiPut("/api/notes/123", { body: "edit" })
+await apiDelete("/api/notes/123")
+
+// Anything custom (uncommon)
+await api("POST", "/api/notes", { body: "..." }, { signal: ctrl.signal })
+```
+
+**Don't** call raw `fetch("/api/...", { method: "POST", body: ... })` — it'll work locally (Vite dev proxy bypasses CloudFront) but fail in production with a confusing 403.
+
 ## Enabling capabilities
 
 Apps start with **all capabilities off** — bootstrap doesn't ask the user upfront because they don't know what they'll need. Your job (Claude) is to enable each capability the *first* time you realize it's needed for the feature being built, by editing `infra/terraform.tfvars` and then running `./scripts/initialize.sh`.
@@ -498,6 +522,7 @@ Same applies to `backend/requirements.txt` if you ever produce a `requirements-l
 - ❌ Don't `CREATE TABLE` from app code. Use migrations.
 - ❌ Don't `import boto3` in route handlers. Use `app.lib.*` helpers.
 - ❌ Don't add an `Authorization` header check. Cloudflare Access handles auth.
+- ❌ Don't call `fetch("/api/...", { method: "POST", body: ... })` from the frontend. Use `apiPost` (or `apiPut`/`apiPatch`/`apiDelete`) from `frontend/src/lib/api.ts`. Raw fetch with body fails in production with HTTP 403 `InvalidSignatureException`.
 - ❌ Don't add `dotenv` or `.env`-loading machinery. The container injects env vars; locally `docker-compose.yml` does it.
 - ❌ Don't write the test suite to mock AWS — use the helper local-dev fallbacks (write to `./uploads/`, SQLite for KV, stdout for email).
 
