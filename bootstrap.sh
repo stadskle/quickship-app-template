@@ -13,25 +13,34 @@ set -euo pipefail
 
 # ---- prompts ---------------------------------------------------------------
 
-default_app_name=$(basename "$PWD")
-read -r -p "App name [${default_app_name}]: " app_name
-app_name=${app_name:-$default_app_name}
-
-if ! [[ "$app_name" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
-  echo "Error: app name must be 3-32 chars, lowercase letters/digits/hyphens, start with a letter, end alphanumeric." >&2
-  exit 1
-fi
-
-# Platform prefix — this is also the AWS profile name (per convention).
-# Default 'quickship' covers the canonical install. Platforms with a custom
-# name_prefix on their bootstrap module set the matching value here.
-echo
+# Platform prefix first so we can strip it from the default app name (avoids
+# users accidentally creating apps like `quickship-quickship-foo` when their
+# folder happens to share the platform's prefix).
+#
+# This is also the AWS profile name (per convention). Default 'quickship'
+# covers the canonical install; platforms with a custom name_prefix set the
+# matching value here.
 echo "Platform prefix — keep the default ('quickship') unless your platform admin"
 echo "has told you to use a different value."
 read -r -p "Platform prefix [quickship]: " aws_profile
 aws_profile=${aws_profile:-quickship}
 if ! [[ "$aws_profile" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
   echo "Error: platform prefix must be 3-32 chars, lowercase letters/digits/hyphens, start with a letter, end alphanumeric." >&2
+  exit 1
+fi
+echo
+
+# Default app name = basename of PWD, with leading "<prefix>-" stripped if
+# present. So a folder named 'quickship-hello-world' on a 'quickship' platform
+# defaults to app_name='hello-world' (subdomain becomes hello-world.<...>),
+# not the double 'quickship-hello-world.<...>'.
+default_app_name=$(basename "$PWD")
+default_app_name=${default_app_name#"${aws_profile}-"}
+read -r -p "App name [${default_app_name}]: " app_name
+app_name=${app_name:-$default_app_name}
+
+if ! [[ "$app_name" =~ ^[a-z][a-z0-9-]{1,30}[a-z0-9]$ ]]; then
+  echo "Error: app name must be 3-32 chars, lowercase letters/digits/hyphens, start with a letter, end alphanumeric." >&2
   exit 1
 fi
 
