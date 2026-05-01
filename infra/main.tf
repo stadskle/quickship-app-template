@@ -12,6 +12,7 @@ module "app" {
     aws.us_east_1 = aws.us_east_1
   }
 
+  name_prefix        = var.aws_profile
   app_name           = var.app_name
   allowed_principals = var.allowed_principals
 

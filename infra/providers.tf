@@ -1,10 +1,10 @@
 # Provider configuration. Auto-loaded by Terraform — you almost never need
-# to edit this file. The credentials all come from SSM placeholders the
-# platform admin populated once during platform bootstrap.
+# to edit this file. Credentials come from the default AWS credential chain:
+# the orchestrator's IAM role when running in CodeBuild (only place this TF
+# is ever applied). No `profile` is set; this TF never runs locally.
 
 provider "aws" {
-  profile = var.aws_profile
-  region  = var.aws_region
+  region = var.aws_region
 
   default_tags {
     tags = {
@@ -17,9 +17,8 @@ provider "aws" {
 # us-east-1 is required for the platform's CLOUDFRONT-scope WAF reference.
 # Nothing else in this app needs us-east-1.
 provider "aws" {
-  alias   = "us_east_1"
-  profile = var.aws_profile
-  region  = "us-east-1"
+  alias  = "us_east_1"
+  region = "us-east-1"
 
   default_tags {
     tags = {

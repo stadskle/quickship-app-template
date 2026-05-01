@@ -283,6 +283,17 @@ while true; do
       echo "─────────────────────────────────────────────────────────"
       if [[ "$STATUS" == "SUCCEEDED" ]]; then
         echo "✓ Build $STATUS"
+        echo
+        echo "Infrastructure is ready. The app pipeline (CodePipeline) is now"
+        echo "watching '$REPO_URL' for pushes."
+        echo
+        echo "Next: write some code, then 'git push' to deploy."
+        echo "  - Each push triggers the pipeline → builds → updates Lambda."
+        echo "  - First push after this also kicks off the initial code deploy."
+        echo "  - Watch it: aws --profile $AWS_PROFILE_NAME codepipeline get-pipeline-state --name ${AWS_PROFILE_NAME}-${APP_NAME}"
+        echo
+        echo "When the pipeline is green, your app is live at the URL printed"
+        echo "above (gated by Cloudflare Access using your allow-list)."
         exit 0
       else
         echo "✗ Build $STATUS"
