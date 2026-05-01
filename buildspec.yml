@@ -1,17 +1,27 @@
 version: 0.2
 #
-# CodeBuild buildspec. Single project handles BOTH build and deploy
-# (no separate CodeDeploy stage — `aws lambda update-function-code`
-# at the end of post_build is the deploy).
+# Pipeline buildspec. Triggered on every push to the tracked branch.
+# Two responsibilities:
+#   1. Reconcile infrastructure — call the platform orchestrator (which runs
+#      `terraform apply`) on every build. Idempotent: a no-op apply is fast
+#      (~30s of refresh+plan with no diff). Catches console-edit drift for
+#      free, and means the developer never has to remember a separate
+#      "redeploy infra" verb when capabilities flip.
+#   2. Update the Lambda — package backend + frontend and call
+#      `aws lambda update-function-code`.
 #
 # Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0 (arm64),
 # matches Lambda Graviton arch so wheels with C extensions
 # (psycopg, cryptography) load correctly when packed into the zip.
 #
 # Env vars injected by the platform's quickship module:
-#   LAMBDA_FUNCTION_NAME — target Lambda name
-#   AWS_REGION           — region for the deploy call
-#   PYTHON_RUNTIME       — informational; alignment with `runtime-versions` below
+#   LAMBDA_FUNCTION_NAME      — target Lambda name
+#   AWS_REGION                — region for the deploy call
+#   PYTHON_RUNTIME            — informational; alignment with `runtime-versions` below
+#   PLATFORM_PREFIX           — platform's name_prefix (= AWS profile, by convention)
+#   APP_NAME                  — this app's name
+#   ORCHESTRATOR_PROJECT      — CodeBuild project that runs terraform
+#   ORCHESTRATOR_INPUT_BUCKET — S3 bucket the orchestrator reads from
 
 phases:
   install:
@@ -23,6 +33,32 @@ phases:
 
   pre_build:
     commands:
+      # ---- 1. Reconcile infrastructure via orchestrator -------------------
+      - REPO_URL=$(aws ssm get-parameter --name "/${PLATFORM_PREFIX}/_platform/app_owners/${APP_NAME}" --query Parameter.Value --output text)
+      - ZIP_KEY="${APP_NAME}-pipeline-${CODEBUILD_BUILD_NUMBER}.zip"
+      - echo "Staging source for orchestrator → s3://${ORCHESTRATOR_INPUT_BUCKET}/${ZIP_KEY}"
+      - (cd "$CODEBUILD_SRC_DIR" && zip -qr "/tmp/${ZIP_KEY}" . -x ".git/*" "node_modules/*" "frontend/node_modules/*" "frontend/dist/*" "build/*")
+      - aws s3 cp "/tmp/${ZIP_KEY}" "s3://${ORCHESTRATOR_INPUT_BUCKET}/${ZIP_KEY}" --quiet
+      - |
+        BUILD_ID=$(aws codebuild start-build \
+          --project-name "${ORCHESTRATOR_PROJECT}" \
+          --source-type-override S3 \
+          --source-location-override "${ORCHESTRATOR_INPUT_BUCKET}/${ZIP_KEY}" \
+          --environment-variables-override "name=MODE,value=apply" "name=REPO_URL,value=${REPO_URL}" \
+          --query 'build.id' --output text)
+        echo "Orchestrator build started: ${BUILD_ID}"
+        while true; do
+          STATUS=$(aws codebuild batch-get-builds --ids "${BUILD_ID}" --query 'builds[0].buildStatus' --output text)
+          case "${STATUS}" in
+            SUCCEEDED) echo "✓ orchestrator apply complete"; break ;;
+            FAILED|FAULT|TIMED_OUT|STOPPED)
+              echo "✗ orchestrator ${STATUS} — see /aws/codebuild/${ORCHESTRATOR_PROJECT}"
+              exit 1 ;;
+          esac
+          sleep 10
+        done
+
+      # ---- 2. Prepare Lambda package directory ----------------------------
       - echo "Building ${LAMBDA_FUNCTION_NAME} runtime ${PYTHON_RUNTIME}"
       - mkdir -p build
 
