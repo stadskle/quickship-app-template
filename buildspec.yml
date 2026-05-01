@@ -71,10 +71,15 @@ phases:
       - cp backend/handler.py build/
 
       # Frontend build (skipped gracefully if frontend/ absent — keeps the
-      # template usable for pure-API apps).
+      # template usable for pure-API apps). `set -e` so npm errors surface
+      # here instead of as a confusing "cp: no such file" two lines later.
       - |
         if [ -f frontend/package.json ]; then
-          (cd frontend && npm ci --silent && npm run build)
+          set -e
+          cd frontend
+          npm ci
+          npm run build
+          cd ..
           mkdir -p build/static
           cp -r frontend/dist/* build/static/
         else

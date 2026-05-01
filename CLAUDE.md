@@ -477,7 +477,20 @@ LLMs (you) often pin stale versions because training data is older than the regi
 3. Prefer existing helpers and stdlib. New deps are surface area; the burden of justification is on the new dep.
 4. If the user asks for a feature that needs a new dep, surface that explicitly: "this needs `<package>` (latest is `X.Y.Z`) — confirm before I add it?"
 
-When bumping the major (or pulling in something that requires a major-version bump on an existing dep), read the changelog for breaking changes — don't just bump and pray. Lockfiles (`package-lock.json` once you `npm install`, optional `requirements-lock.txt` via `pip freeze`) capture the exact resolved tree per repo for reproducibility.
+When bumping the major (or pulling in something that requires a major-version bump on an existing dep), read the changelog for breaking changes — don't just bump and pray.
+
+### Lockfiles are required for the pipeline
+
+`frontend/package-lock.json` MUST be committed. The pipeline runs `npm ci` (not `npm install`) for deterministic builds, and `npm ci` errors out immediately when the lockfile is missing — frontend build fails, no Lambda code ships.
+
+After any change to `frontend/package.json` (adding, bumping, removing a dep), regenerate and commit the lockfile:
+
+```bash
+cd frontend && npm install
+git add package.json package-lock.json
+```
+
+Same applies to `backend/requirements.txt` if you ever produce a `requirements-lock.txt` (we don't currently — pip's strictness model is different from npm's).
 
 ## Don'ts
 
