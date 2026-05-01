@@ -29,3 +29,10 @@ ai_models_enabled = __AI_MODELS_ENABLED__
 # Per-app secrets. Each name becomes an SSM SecureString placeholder +
 # Lambda env var. Set values via `aws ssm put-parameter` after first apply.
 secret_names = []
+
+# Lambda sizing — defaults are fine for most internal tools. Bump when:
+#   - You see CloudWatch reports of timeouts (timeout_seconds too low)
+#   - Cold starts or response times drag (memory_mb too low; CPU scales
+#     linearly with memory)
+# memory_mb       = 256
+# timeout_seconds = 25

@@ -16,6 +16,10 @@ module "app" {
   app_name           = var.app_name
   allowed_principals = var.allowed_principals
 
+  # Lambda sizing
+  memory_mb       = var.memory_mb
+  timeout_seconds = var.timeout_seconds
+
   # Capabilities
   database_enabled  = var.database_enabled
   storage_enabled   = var.storage_enabled

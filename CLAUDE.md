@@ -399,6 +399,7 @@ The backend container reads creds from the mounted `~/.aws` and exercises real A
 - **Ship code changes**: `git push`, then **spawn a background monitor agent** — see "Watching a deploy" below. The user has IAM access keys but no AWS console access (by platform design — there's no SSO/console session for them), so you are their only window into the pipeline. If you don't surface the result, they're blind.
 - **Destroy an app entirely**: `./scripts/destroy.sh`. Same orchestrator path with `MODE=destroy`. Strong confirmation required — irreversible.
 - **Inspect prod DB**: `psql "$(aws --profile __AWS_PROFILE__ ssm get-parameter --name /__AWS_PROFILE__/apps/__APP_NAME__/database_url --with-decryption --query Parameter.Value --output text --region eu-central-1)"`.
+- **Bump Lambda timeout / memory**: uncomment `memory_mb` / `timeout_seconds` in `infra/terraform.tfvars`. Defaults (256 MB, 25 s) cover Bedrock + DB roundtrips for typical requests. Symptoms that suggest bumping: CloudWatch shows `Task timed out after 25.00 seconds` (raise timeout, max 900); cold starts or steady-state latency drag (raise memory — CPU scales with it). If a single request legitimately needs minutes, prefer a background-job pattern over a long Lambda.
 
 ## Watching a deploy
 

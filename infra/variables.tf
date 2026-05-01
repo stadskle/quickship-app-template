@@ -14,6 +14,20 @@ variable "aws_region" {
   default     = "eu-central-1"
 }
 
+# ---- Lambda sizing --------------------------------------------------------
+
+variable "memory_mb" {
+  type        = number
+  description = "Lambda memory size in MB. CPU scales linearly with memory. Bump if cold starts feel sluggish or if response times suffer under load."
+  default     = 256
+}
+
+variable "timeout_seconds" {
+  type        = number
+  description = "Lambda timeout in seconds. Default 25 covers Bedrock calls + DB roundtrips comfortably. Bump (up to 900) for legitimate long operations; if every request takes >25s, you probably want a background job instead."
+  default     = 25
+}
+
 variable "allowed_principals" {
   type        = list(string)
   description = "Cloudflare Access allow-list. Mix of explicit emails and *@domain wildcards."
