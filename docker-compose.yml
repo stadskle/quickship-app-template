@@ -37,6 +37,12 @@ services:
       AWS_REGION: __AWS_REGION__
       AWS_DEFAULT_REGION: __AWS_REGION__
       AWS_PROFILE: __AWS_PROFILE__
+      # Anthropic API key for app/lib/ai_claude. In prod the platform
+      # injects this via SSM SecureString → Lambda env. Locally we pass
+      # the host's exported value through. To exercise Claude calls
+      # locally, run: export ANTHROPIC_API_KEY=sk-ant-...
+      # Unset = ai_claude raises a clear "not set" error on first call.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Capability env vars below point at the per-app `-localdev` AWS
       # twins (DynamoDB tables and S3 bucket) provisioned alongside prod.
       # When set, kv.py / storage.py use real AWS via the dev's profile;

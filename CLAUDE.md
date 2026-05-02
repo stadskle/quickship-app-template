@@ -258,6 +258,15 @@ git push  # picks up the new env value (the platform's `data.aws_ssm_parameter` 
 
 Get the API key from [console.anthropic.com](https://console.anthropic.com/) → API Keys. A free-tier account is plenty for a single internal-tool app's volume.
 
+For local-dev testing of `ai_claude` (`docker compose up`), export the key in your shell BEFORE bringing the stack up — `docker-compose.yml` passes `ANTHROPIC_API_KEY` from your shell into the backend container:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+docker compose up
+```
+
+Without it, `ai_claude` raises a clear "ANTHROPIC_API_KEY is not set" error on first call (rather than reaching the API with an invalid key).
+
 > ⚠️ **Claude Max/Pro and the Anthropic API are separate billing tracks.** Same login, separate wallets:
 >
 > | Product | What it bills | Where you manage it |
