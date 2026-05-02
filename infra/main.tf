@@ -38,9 +38,51 @@ module "app" {
   developers = var.developers
 }
 
+# Test environment — provisioned only when test_environment_enabled = true.
+# Mirrors prod capabilities by default. Deploys from the `test` git branch.
+# `pipeline_orchestrator_trigger = false` makes the test pipeline code-only:
+# infra changes flow only through main (which applies BOTH this module and
+# `module.app` on the same tfstate). That avoids the test-branch's
+# `terraform.tfvars` racing main's against shared state.
+module "app_test" {
+  count  = var.test_environment_enabled ? 1 : 0
+  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=main"
+
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name_prefix        = var.aws_profile
+  app_name           = "${var.app_name}-test"
+  allowed_principals = var.allowed_principals
+
+  memory_mb       = var.memory_mb
+  timeout_seconds = var.timeout_seconds
+
+  database_enabled  = var.database_enabled
+  storage_enabled   = var.storage_enabled
+  dynamodb_tables   = var.dynamodb_tables
+  email_enabled     = var.email_enabled
+  ai_models_enabled = var.ai_models_enabled
+  secret_names      = var.secret_names
+
+  pipeline_enabled              = var.git_repo != ""
+  git_repo                      = var.git_repo
+  git_branch                    = "test"
+  pipeline_orchestrator_trigger = false
+
+  developers = var.developers
+}
+
 output "app_url" {
   description = "Public URL fronted by Cloudflare Access."
   value       = module.app.url
+}
+
+output "test_app_url" {
+  description = "Public URL of the test environment (only when test_environment_enabled = true)."
+  value       = var.test_environment_enabled ? module.app_test[0].url : null
 }
 
 output "function_name" {

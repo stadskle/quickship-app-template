@@ -87,3 +87,11 @@ variable "secret_names" {
   description = "Secret names this app needs at runtime. Each becomes an SSM SecureString placeholder + Lambda env var. Set values out-of-band (CLI/console) after first apply, then re-deploy. See CLAUDE.md \"Adding a secret\"."
   default     = []
 }
+
+# ---- Test environment (optional) -----------------------------------------
+
+variable "test_environment_enabled" {
+  type        = bool
+  description = "When true, provisions a parallel '<app>-test' stack at <app>-test.<apex> deployed from the 'test' git branch. Same capabilities as prod. Code-only deploys (test pipeline does NOT run terraform — infra changes flow only through main, see CLAUDE.md \"Working with the test environment\"). Doubles per-app resources; flip back to false to tear down."
+  default     = false
+}

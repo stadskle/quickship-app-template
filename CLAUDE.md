@@ -507,6 +507,53 @@ After spawning, tell the user briefly: "Pushed. Watching the pipeline; I'll surf
 
 **Caveat to be honest about:** this works only inside this Claude Code session. If the user closes Claude before the deploy finishes, the background agent dies. For high-stakes deploys, also encourage them to keep the session open or check the pipeline manually afterward.
 
+## Working with the test environment
+
+If `test_environment_enabled = true` in `infra/terraform.tfvars`, the app has a parallel stack at `<app>-test.<apex>` deployed from a `test` git branch. Two pipelines, two Lambdas, two databases (when DB is enabled), two of everything per-app — fully isolated from prod.
+
+### Branch model
+
+| Branch | Pipeline | What it deploys |
+|---|---|---|
+| `main` | prod | Runs orchestrator → `terraform apply` (covers BOTH prod and test infra) → updates prod Lambda code |
+| `test` | test | Code-only update of test Lambda (no `terraform apply`) |
+
+Critical asymmetry: **infra changes flow only through `main`**. The test pipeline does NOT run terraform — if it did, the test branch's `terraform.tfvars` would race the main branch's against the same shared tfstate. Don't try to set capabilities or change resources from the `test` branch; those edits get ignored until they merge back to `main`.
+
+### Typical workflow
+
+```bash
+# Try a risky change first on test
+git checkout test
+git merge main           # bring test up to date with prod
+# … edit backend/frontend code …
+git commit -am "experimental change"
+git push                 # test pipeline → updates <app>-test.<apex>
+
+# Validate it at https://<app>-test.<apex>
+
+# Promote to prod when happy
+git checkout main
+git merge test           # fast-forward or no-ff, your call
+git push                 # prod pipeline → terraform apply + updates <app>.<apex>
+```
+
+### When to suggest the test environment
+
+Recommend turning it on (`test_environment_enabled = true` + re-deploy via `./scripts/initialize.sh` or a main-branch push) when:
+- The user is about to make a change that's risky to validate locally (Bedrock prompts, SES sends, third-party API integrations, anything that's awkward to mock).
+- They're tweaking auth/access flows that depend on Cloudflare Access being in front.
+- They've had a prod regression and want a smoke-test layer.
+
+Push back when:
+- The app is single-developer, low-stakes, and they're already happy with `docker compose up` for iteration. The test env doubles cost and adds branch-juggling friction.
+
+### Toggling the test env later
+
+To turn ON later: edit tfvars (`test_environment_enabled = true`), commit, push to main → orchestrator provisions the test stack. Manually push the `test` branch (`git branch test main && git push -u origin test`) so the test pipeline has a source.
+
+To turn OFF: edit tfvars (`test_environment_enabled = false`), commit, push to main → orchestrator destroys the test-side resources. The `test` branch on the remote stays around but is unused.
+
 ## Changing the Python version (rare)
 
 Default is Python 3.12 across Lambda, local Dockerfile, and (when wired) CodeBuild. To upgrade or downgrade:

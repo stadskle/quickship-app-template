@@ -201,6 +201,26 @@ elif [[ -n "$(git log @{u}.. --oneline 2>/dev/null)" ]]; then
   git push
 fi
 
+# ---- test branch (if test_environment_enabled) ------------------------------
+
+# When the test env is on, the test pipeline will source from the 'test' git
+# branch. Both pipelines exist after orchestrator's apply, but the test one
+# fails its first run if the branch doesn't exist on the remote yet. Create
+# it locally + push so the pipeline has a valid source.
+TEST_ENV=$(grep -E '^test_environment_enabled\b' infra/terraform.tfvars | head -1 | cut -d'=' -f2 | tr -d ' "')
+if [[ "$TEST_ENV" == "true" ]]; then
+  if ! git rev-parse --verify --quiet refs/heads/test >/dev/null; then
+    echo
+    echo "→ Test environment is enabled. Creating 'test' branch from 'main'..."
+    git branch test main
+    git push -u origin test
+    echo "✓ 'test' branch created and pushed."
+  elif ! git ls-remote --exit-code --heads origin test >/dev/null 2>&1; then
+    echo "→ Pushing local 'test' branch to remote..."
+    git push -u origin test
+  fi
+fi
+
 # ---- look up orchestrator ---------------------------------------------------
 
 ssm_get() {
@@ -294,6 +314,14 @@ while true; do
         echo
         echo "When the pipeline is green, your app is live at the URL printed"
         echo "above (gated by Cloudflare Access using your allow-list)."
+        if [[ "$TEST_ENV" == "true" ]]; then
+          echo
+          echo "Test environment is on:"
+          echo "  - Switch to it locally: git checkout test"
+          echo "  - Push to 'test' branch deploys to <app>-test.<apex>"
+          echo "  - Push to 'main' deploys to prod (and re-applies infra)"
+          echo "  - See CLAUDE.md \"Working with the test environment\" for the workflow."
+        fi
         exit 0
       else
         echo "✗ Build $STATUS"

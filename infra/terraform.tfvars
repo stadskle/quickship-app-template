@@ -36,3 +36,10 @@ secret_names = []
 #     linearly with memory)
 # memory_mb       = 256
 # timeout_seconds = 25
+
+# Test environment — separate <app>-test stack at <app>-test.<apex> deployed
+# from the 'test' git branch. Same capabilities as prod (mirrored from the
+# flags above). Code-only deploys from test branch — infra changes only
+# through main. Doubles per-app cost. See CLAUDE.md "Working with the test
+# environment" before flipping this on.
+test_environment_enabled = __TEST_ENVIRONMENT_ENABLED__

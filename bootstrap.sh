@@ -130,6 +130,20 @@ email_enabled="false"
 ai_models_enabled="false"
 dynamodb_tables_json="[]"
 
+# Test environment — opt-in. Doubles per-app resources and adds a 'test'
+# branch to the git workflow. Most apps don't need it; can be flipped on
+# later by editing terraform.tfvars.
+echo
+echo "Want a test environment? Provisions a parallel '<app>-test' stack"
+echo "deployed from the 'test' git branch. Same capabilities as prod."
+echo "Doubles per-app resource cost. Most users say no."
+read -r -p "Test environment [y/N]: " test_env_input
+case "${test_env_input,,}" in
+  y|yes|true) test_environment_enabled="true" ;;
+  *)          test_environment_enabled="false" ;;
+esac
+echo "✓ Test environment: $test_environment_enabled"
+
 # ---- substitutions ---------------------------------------------------------
 
 # Cross-platform sed -i (macOS needs '' arg, GNU sed doesn't).
@@ -154,6 +168,7 @@ substitute() {
   sedi "s|__DYNAMODB_TABLES__|${dynamodb_tables_json}|g" "$file"
   sedi "s|__EMAIL_ENABLED__|${email_enabled}|g" "$file"
   sedi "s|__AI_MODELS_ENABLED__|${ai_models_enabled}|g" "$file"
+  sedi "s|__TEST_ENVIRONMENT_ENABLED__|${test_environment_enabled}|g" "$file"
   sedi "s|__DEVELOPERS__|${developers_json}|g" "$file"
 }
 
