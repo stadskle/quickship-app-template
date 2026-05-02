@@ -60,7 +60,7 @@ Health endpoints can omit the dep.
 - **Migrations**: drop SQL files in `backend/migrations/`, named `NNNN_description.sql` (e.g., `0001_initial.sql`, `0002_notes_table.sql`). Yoyo runs them on Lambda cold start; locally they run on backend container startup.
 - **Never `CREATE TABLE` from app code.** Always migrations.
 - **Schema is yours**: relational, JSONB, hybrid — pick what fits the feature.
-- **Every migration has both a `-- migrate:` and a `-- rollback:` section.** Yoyo's format. The `quickship-reviewer` agent enforces this. If a migration is genuinely irreversible (e.g., `DROP COLUMN` loses data forever), the rollback section is a comment explaining why — explicit irreversibility is the rule.
+- **Forward + rollback are SIBLING files.** Yoyo 9's convention: `0007_add_priority.sql` for the forward migration, `0007_add_priority.rollback.sql` for the rollback. Both are plain SQL — no `-- migrate:` / `-- rollback:` markers (yoyo 9 does not parse those; if you put them inside one file, the "rollback" SQL runs as part of the forward apply). The `quickship-reviewer` agent enforces both files exist. If a migration is genuinely irreversible (e.g., `DROP COLUMN` loses data forever), the rollback file contains only a comment explaining why — explicit irreversibility is the rule.
 
 ## Safe migration recipes
 
@@ -68,36 +68,53 @@ Migrations run automatically on the next Lambda cold start in production. There 
 
 The `quickship-reviewer` agent flags destructive SQL and asks for explicit acknowledgement; these recipes are how to do destructive things safely.
 
+> **Format reminder.** Each migration is **two files** in `backend/migrations/`:
+> - `NNNN_<desc>.sql` — forward migration (plain SQL)
+> - `NNNN_<desc>.rollback.sql` — rollback (plain SQL, or comment-only if irreversible)
+>
+> Don't put `-- migrate:` / `-- rollback:` markers inside one file — yoyo 9 doesn't parse those and the "rollback" SQL runs during apply.
+
 ### Adding a column
 
 **Nullable column** — safe in one migration:
-```sql
--- migrate:
-ALTER TABLE notes ADD COLUMN priority TEXT;
 
--- rollback:
+`0007_add_priority.sql`:
+```sql
+ALTER TABLE notes ADD COLUMN priority TEXT;
+```
+
+`0007_add_priority.rollback.sql`:
+```sql
 ALTER TABLE notes DROP COLUMN priority;
 ```
 
 **NOT NULL column** — must be done in three migrations (expand-contract):
+
+`0007_add_priority.sql`:
 ```sql
--- 0007_add_priority.sql
--- migrate:
 ALTER TABLE notes ADD COLUMN priority TEXT;
--- rollback:
+```
+`0007_add_priority.rollback.sql`:
+```sql
 ALTER TABLE notes DROP COLUMN priority;
+```
 
--- 0008_backfill_priority.sql
--- migrate:
+`0008_backfill_priority.sql`:
+```sql
 UPDATE notes SET priority = 'normal' WHERE priority IS NULL;
--- rollback:
+```
+`0008_backfill_priority.rollback.sql`:
+```sql
 -- intentionally empty: undoing a backfill is a no-op data-wise.
+```
 
--- 0009_priority_required.sql
--- migrate:
+`0009_priority_required.sql`:
+```sql
 ALTER TABLE notes ALTER COLUMN priority SET DEFAULT 'normal';
 ALTER TABLE notes ALTER COLUMN priority SET NOT NULL;
--- rollback:
+```
+`0009_priority_required.rollback.sql`:
+```sql
 ALTER TABLE notes ALTER COLUMN priority DROP NOT NULL;
 ALTER TABLE notes ALTER COLUMN priority DROP DEFAULT;
 ```
@@ -108,22 +125,24 @@ This sequence guarantees no row ever fails the constraint mid-deploy.
 
 Three deploys, never just one. The middle deploy keeps both columns visible.
 
+`00NN_add_new_name.sql`:
 ```sql
--- 00NN_add_new_name.sql
--- migrate:
 ALTER TABLE notes ADD COLUMN body_v2 TEXT;
 UPDATE notes SET body_v2 = body;
--- rollback:
+```
+`00NN_add_new_name.rollback.sql`:
+```sql
 ALTER TABLE notes DROP COLUMN body_v2;
 ```
 
 Then ship app code that reads `body_v2` and writes to BOTH `body` and `body_v2`. Then:
 
+`00NN+1_drop_old_name.sql`:
 ```sql
--- 00NN+1_drop_old_name.sql
--- migrate:
 ALTER TABLE notes DROP COLUMN body;
--- rollback:
+```
+`00NN+1_drop_old_name.rollback.sql`:
+```sql
 -- IRREVERSIBLE: data in 'body' is gone after this. Restore from a Neon backup if needed.
 ```
 
@@ -133,32 +152,34 @@ Then ship app code that reads/writes only `body_v2`. The interim deploy is what 
 
 Same expand-contract: stop using it in app code first, ship that, then drop.
 
+`00NN_drop_legacy_field.sql`:
 ```sql
--- 00NN_drop_legacy_field.sql
--- migrate:
 ALTER TABLE notes DROP COLUMN legacy_status;
--- rollback:
+```
+`00NN_drop_legacy_field.rollback.sql`:
+```sql
 -- IRREVERSIBLE: data in 'legacy_status' is gone. The column was already
 -- unused by app code as of deploy <YYYY-MM-DD>; the data was confirmed
 -- non-essential before this migration shipped.
 ```
 
-The comment in the rollback section is the audit trail — explicit acknowledgement that the data loss was intentional.
+The comment in the rollback file is the audit trail — explicit acknowledgement that the data loss was intentional.
 
 ### Changing a column type
 
 Don't `ALTER COLUMN ... TYPE` directly unless the conversion is trivial and tested. Safer:
 
+`00NN_add_new_typed_column.sql`:
 ```sql
--- 00NN_add_new_typed_column.sql
--- migrate:
 ALTER TABLE notes ADD COLUMN priority_int INTEGER;
 UPDATE notes SET priority_int = CASE priority
   WHEN 'low' THEN 1
   WHEN 'normal' THEN 2
   WHEN 'high' THEN 3
 END;
--- rollback:
+```
+`00NN_add_new_typed_column.rollback.sql`:
+```sql
 ALTER TABLE notes DROP COLUMN priority_int;
 ```
 
@@ -168,7 +189,7 @@ Then app code transitions to read/write the new column, then drop the old.
 
 **Default: roll forward.** If a migration shipped a bad change, write a NEW migration that fixes it. Don't try to `yoyo rollback` against production — by the time you'd run it, app code has already written rows that the rollback can't reason about. Rollback in production is a last-resort manual operation, not a routine part of recovery.
 
-The `-- rollback:` section's value is:
+The `.rollback.sql` sibling file's value is:
 1. Local-dev testability (you can `yoyo rollback` to wipe a migration during iteration).
 2. Forcing the author to think "is this reversible?" — half of bad migrations are caught by failing to write a sensible rollback.
 
@@ -462,7 +483,7 @@ The backend container reads creds from the mounted `~/.aws` and exercises real A
 ## Common tasks
 
 - **Add a route**: create `backend/app/routes/<name>.py`, register in `app/main.py`. Pattern: `@router.get("/api/...")` with `Depends(current_user)`.
-- **Add a migration**: create `backend/migrations/NNNN_description.sql` with the next sequential number. Plain SQL with `-- migrate:` and `-- rollback:` sections.
+- **Add a migration**: create `backend/migrations/NNNN_description.sql` (forward, plain SQL) AND `backend/migrations/NNNN_description.rollback.sql` (rollback, plain SQL or comment-only if irreversible). See "Safe migration recipes" above.
 - **Run locally**: `docker compose up`.
 - **Deploy infra changes** (anything in `infra/`): `./scripts/initialize.sh`. Zips the working tree, uploads to the platform's orchestrator bucket, starts a CodeBuild that runs `terraform apply` with admin-level perms (the dev's own IAM user does NOT have apply perms — by design). Tails the logs until the build finishes.
 - **Ship code changes**: `git push`, then **spawn a background monitor agent** — see "Watching a deploy" below. The user has IAM access keys but no AWS console access (by platform design — there's no SSO/console session for them), so you are their only window into the pipeline. If you don't surface the result, they're blind.

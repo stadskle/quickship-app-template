@@ -31,8 +31,8 @@ Read CLAUDE.md at the repo root first to refresh on the conventions, then check 
 
 When a file under `backend/migrations/` is added or modified, scan for these patterns and report. The user is non-technical and will not realize migrations run automatically on next Lambda cold start in production — destructive SQL = data loss with no manual gate.
 
-- **`DROP TABLE`** in `-- migrate:` section → block-merge. Irreversible. The right pattern is the expand-contract: rename to `<table>_deprecated_YYYYMMDD`, ship that, verify nothing reads from it, then drop in a later migration.
-- **`DROP COLUMN`** in `-- migrate:` section → block-merge. Same reasoning. Two-deploy expand-contract: stop writing/reading from the column in app code first, ship; later add a migration that drops it.
+- **`DROP TABLE`** in a forward migration file → block-merge. Irreversible. The right pattern is the expand-contract: rename to `<table>_deprecated_YYYYMMDD`, ship that, verify nothing reads from it, then drop in a later migration.
+- **`DROP COLUMN`** in a forward migration file → block-merge. Same reasoning. Two-deploy expand-contract: stop writing/reading from the column in app code first, ship; later add a migration that drops it.
 - **`ALTER COLUMN ... TYPE`** with a non-trivial conversion (`TEXT → INTEGER`, `VARCHAR → TIMESTAMP`, etc.) → warn. Type conversions can fail mid-migration on bad rows or lose precision. Recommend: add new column with new type, backfill, drop old, rename.
 - **`ALTER COLUMN ... SET NOT NULL`** without an accompanying `SET DEFAULT` (or a backfill `UPDATE` earlier in the same file) → warn. Existing NULL rows will fail the constraint and the migration will half-apply, leaving the DB in an awkward state.
 - **`RENAME COLUMN`** or **`RENAME TABLE`** → warn. Coordinate with app code: deploy a version that reads/writes BOTH names first, then deploy the rename, then deploy a version that uses only the new name. Otherwise you have a window of broken queries.
@@ -40,15 +40,15 @@ When a file under `backend/migrations/` is added or modified, scan for these pat
 
 For each violation/warning, point at the safe pattern in CLAUDE.md "Safe migration recipes".
 
-## Migration rollback-section requirement (block merge if missing)
+## Migration rollback-file requirement (block merge if missing)
 
-Yoyo supports `-- migrate:` and `-- rollback:` markers in SQL migration files. Every new migration file must have BOTH sections, even if the rollback is `-- rollback:` followed by a comment explaining why rollback is impossible (e.g. data loss).
+Yoyo 9 splits migrations into sibling files: `NNNN_<desc>.sql` for the forward apply and `NNNN_<desc>.rollback.sql` for the rollback. The two-file convention is mandatory; yoyo 9 does not parse inline `-- migrate:` / `-- rollback:` markers, so anyone using them ships their "rollback" SQL as part of the apply (silently destructive).
 
-- File missing `-- migrate:` section → block-merge ("malformed migration").
-- File missing `-- rollback:` section → block-merge ("every migration ships with a rollback; if the change is irreversible, the rollback section should be a comment explaining why — explicit irreversibility is better than implicit").
-- File with empty `-- rollback:` section (no SQL, no comment) → block-merge (same).
+- New `NNNN_<desc>.sql` added without a sibling `NNNN_<desc>.rollback.sql` → **block-merge** ("every migration ships with a rollback; if the change is irreversible, the rollback file should be a comment explaining why — explicit irreversibility is better than implicit").
+- Forward migration file containing the strings `-- migrate:` or `-- rollback:` as section markers → **block-merge** ("yoyo 9 does not parse inline markers; split into sibling `.rollback.sql` file. The 'rollback' SQL after the marker WILL run as part of the forward apply.").
+- `.rollback.sql` file present but empty (no SQL, no comment) → block-merge (same — at minimum a comment explaining "intentionally empty: undoing X is a no-op data-wise" or "IRREVERSIBLE: …").
 
-Rollback in production is rare — the default recovery for a bad migration is to roll forward (write a new migration that reverses the schema). The rollback section's main value is local-dev testability and forcing the author to think "could I undo this?"
+Rollback in production is rare — the default recovery for a bad migration is to roll forward (write a new migration that reverses the schema). The rollback file's main value is local-dev testability and forcing the author to think "could I undo this?"
 
 ## Infra-safety violations (block /deploy unless explicitly acknowledged)
 
