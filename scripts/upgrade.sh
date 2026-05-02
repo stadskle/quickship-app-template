@@ -119,9 +119,31 @@ substitute_in() {
 CHANGED=()
 SELF_CHANGED=0
 
+# Self-update FIRST, via atomic mv (not cp). `cp` overwrites the running
+# script's inode in place, which corrupts bash's chunked-file reads
+# mid-run. `mv` swaps the inode atomically; bash keeps reading from the
+# old inode it already opened (POSIX guarantees), and the new script is
+# on disk for next invocation. Doing this first means the new version is
+# in place immediately even if the rest of the run fails.
+SELF_SRC="$TMP/tmpl/scripts/upgrade.sh"
+if [[ -f "$SELF_SRC" ]] && ! diff -q scripts/upgrade.sh "$SELF_SRC" >/dev/null 2>&1; then
+  echo "  ~ scripts/upgrade.sh"
+  CHANGED+=("scripts/upgrade.sh")
+  SELF_CHANGED=1
+  if [[ "$mode" == "apply" ]]; then
+    cp "$SELF_SRC" scripts/upgrade.sh.new
+    chmod +x scripts/upgrade.sh.new
+    mv scripts/upgrade.sh.new scripts/upgrade.sh
+  else
+    diff -u scripts/upgrade.sh "$SELF_SRC" | sed -n '1,30p'
+    echo
+  fi
+fi
+
 process_file() {
   local f="$1"
   local apply_subst="$2"   # "true" / "false"
+  [[ "$f" == "scripts/upgrade.sh" ]] && return 0   # handled above
   local src="$TMP/tmpl/$f"
   [[ -f "$src" ]] || return 0   # template doesn't ship this file
 
@@ -143,7 +165,6 @@ process_file() {
   elif ! diff -q "$f" "$scratch" >/dev/null 2>&1; then
     echo "  ~ $f"
     CHANGED+=("$f")
-    [[ "$f" == "scripts/upgrade.sh" ]] && SELF_CHANGED=1
     if [[ "$mode" == "apply" ]]; then
       cp "$scratch" "$f"
       [[ "$f" == scripts/* ]] && chmod +x "$f"
