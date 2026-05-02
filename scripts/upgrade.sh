@@ -57,6 +57,7 @@ PLATFORM_FILES_SUBSTITUTE=(
   scripts/initialize.sh
   scripts/destroy.sh
   CLAUDE.md
+  .claude/settings.json
 )
 
 # ---- args ---------------------------------------------------------------

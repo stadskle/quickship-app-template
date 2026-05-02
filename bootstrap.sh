@@ -187,6 +187,7 @@ files=(
   infra/versions.tf
   infra/terraform.tfvars
   .claude/commands/initialize.md
+  .claude/settings.json
   scripts/initialize.sh
   scripts/destroy.sh
 )
