@@ -24,19 +24,31 @@ TEMPLATE_REF="${UPGRADE_REF:-main}"
 
 # ---- manifest -----------------------------------------------------------
 #
-# Add to this list when the platform decides another file is platform-owned
-# enough to sync. Bias toward NOT adding — anything app-Claude or the
-# developer might reasonably edit should stay out.
+# Two lists: files copied as-is (no substitution) and files where placeholders
+# need substituting from the local app config. Bias toward NOT adding —
+# anything app-Claude or the developer might reasonably edit should stay out.
+#
+# Why two lists: this script runs `sed s/__APP_NAME__/<name>/` on every file in
+# the SUBSTITUTE list. If we run that on this very script (which contains
+# `__APP_NAME__` as a literal sed pattern below), the script's substitution
+# function self-corrupts on the first --apply run. Same risk for any file
+# that doesn't actually use the placeholders.
 
-PLATFORM_FILES=(
+# Copied verbatim from template — no placeholders, no substitution.
+PLATFORM_FILES_VERBATIM=(
   scripts/upgrade.sh
-  scripts/initialize.sh
-  scripts/destroy.sh
   .claude/agents/quickship-reviewer.md
   .claude/commands/local.md
   .claude/commands/migrate.md
   .claude/commands/review.md
   .claude/commands/route.md
+)
+
+# Has __APP_NAME__ / __AWS_PROFILE__ / __AWS_REGION__ placeholders that need
+# the local app's values substituted in.
+PLATFORM_FILES_SUBSTITUTE=(
+  scripts/initialize.sh
+  scripts/destroy.sh
 )
 
 # ---- args ---------------------------------------------------------------
@@ -107,14 +119,18 @@ substitute_in() {
 CHANGED=()
 SELF_CHANGED=0
 
-for f in "${PLATFORM_FILES[@]}"; do
-  src="$TMP/tmpl/$f"
-  [[ -f "$src" ]] || continue   # template doesn't ship this file
+process_file() {
+  local f="$1"
+  local apply_subst="$2"   # "true" / "false"
+  local src="$TMP/tmpl/$f"
+  [[ -f "$src" ]] || return 0   # template doesn't ship this file
 
-  scratch="$TMP/proc/$f"
+  local scratch="$TMP/proc/$f"
   mkdir -p "$(dirname "$scratch")"
   cp "$src" "$scratch"
-  substitute_in "$scratch"
+  if [[ "$apply_subst" == "true" ]]; then
+    substitute_in "$scratch"
+  fi
 
   if [[ ! -f "$f" ]]; then
     echo "  + $f (new)"
@@ -136,7 +152,10 @@ for f in "${PLATFORM_FILES[@]}"; do
       echo
     fi
   fi
-done
+}
+
+for f in "${PLATFORM_FILES_VERBATIM[@]}";   do process_file "$f" "false"; done
+for f in "${PLATFORM_FILES_SUBSTITUTE[@]}"; do process_file "$f" "true";  done
 
 # ---- summary -------------------------------------------------------------
 
