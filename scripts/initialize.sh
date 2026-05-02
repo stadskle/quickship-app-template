@@ -148,7 +148,23 @@ fi
 
 if [[ "$REMOTE_JUST_ADDED" == "true" ]]; then
   echo "→ Pushing initial commit..."
-  PUSH_OUTPUT=$(git push -u origin main 2>&1) || PUSH_FAILED=true
+  echo "  (If this is your first connection to the host you may need to"
+  echo "   confirm an SSH fingerprint, or enter an HTTPS access token / SSH key passphrase.)"
+  PUSH_LOG=$(mktemp)
+  # tee /dev/tty so the user SEES live output (including any interactive
+  # prompts from git/ssh). PIPESTATUS[0] preserves git's exit code through
+  # the pipe; without this PUSH_OUTPUT capture would silently swallow any
+  # prompt and look like a hang.
+  if git push -u origin main 2>&1 | tee "$PUSH_LOG" >/dev/tty; then
+    PUSH_FAILED=""
+  else
+    case "${PIPESTATUS[0]}" in
+      0) PUSH_FAILED="" ;;
+      *) PUSH_FAILED="true" ;;
+    esac
+  fi
+  PUSH_OUTPUT=$(cat "$PUSH_LOG")
+  rm -f "$PUSH_LOG"
 
   if [[ -n "${PUSH_FAILED:-}" ]]; then
     echo "$PUSH_OUTPUT"
