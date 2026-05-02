@@ -533,6 +533,52 @@ After spawning, tell the user briefly: "Pushed. Watching the pipeline; I'll surf
 
 **Caveat to be honest about:** this works only inside this Claude Code session. If the user closes Claude before the deploy finishes, the background agent dies. For high-stakes deploys, also encourage them to keep the session open or check the pipeline manually afterward.
 
+## Upgrading platform-owned files
+
+The platform is on a continuous-release model — `template@main` evolves between when the user bootstrapped this app and now. A subset of the files in this repo are **platform-owned**: the helper scripts under `scripts/`, and Claude's own agents/commands under `.claude/`. They get fixes, new behaviour, security improvements over time. The user has no automatic way to pull those changes; that's what `./scripts/upgrade.sh` does.
+
+### When to suggest running it
+
+Recommend `./scripts/upgrade.sh` when:
+- The user mentions a platform-side change ("the platform team said…", "I read in the README…").
+- A debug session uncovers behaviour that doesn't match what's documented in this CLAUDE.md (e.g., the reviewer agent missed a rule that the platform's reviewer should now catch).
+- The user asks "is there an upgrade?" / "any platform updates?" / "am I out of date?"
+
+The script's manifest is intentionally narrow (8 files, none of them user-editable in normal use), so suggesting it is low-risk.
+
+### Reading the output
+
+```
+$ ./scripts/upgrade.sh
+→ Fetching https://github.com/stadskle/quickship-app-template.git@main...
+  ~ scripts/initialize.sh                 # ← this file changed in template since bootstrap
+  + .claude/commands/newverb.md (new)     # ← template added a new file
+
+2 file(s) differ from template@main.
+Re-run with --apply to overwrite. (Dry run; no files modified.)
+```
+
+`~` = file content differs. `+` = template has a new file the app doesn't. No output for a file means it's already in sync.
+
+After `--apply`:
+```
+✓ Updated 2 file(s).
+```
+
+The script does **not** auto-commit. Always do this next:
+1. Run `git diff` to verify what changed (the user trusts you to interpret this — most diffs will be straightforward platform-fix-vs-old-version).
+2. `git add` the affected files.
+3. Commit with a message like "platform upgrade" so it's clear in the log this wasn't a feature change.
+4. `git push` (the pipeline ignores changes to `scripts/` and `.claude/` for code deploys, but the commit still lands in git history).
+
+### What it doesn't touch
+
+App code (`backend/app/main.py`, `backend/app/routes/`, `frontend/src/App.tsx`), infra (`infra/`), data (`backend/migrations/`), and dependency files (`requirements.txt`, `package.json`) are **never** modified by upgrade.sh. If the platform changes how, e.g., `app.lib.ai_claude` works, the user has to opt in by reading the changelog and editing their own code — upgrade.sh won't push helper-library changes (yet — manifest may grow).
+
+### When something breaks after upgrade
+
+If a synced file breaks something (rare — manifest is platform code), the safe restore is `git checkout HEAD~1 -- <file>` (assuming you committed before testing). Worst case: re-curl the file from the old template ref via `--ref <commit-sha>`.
+
 ## Working with the test environment
 
 If `test_environment_enabled = true` in `infra/terraform.tfvars`, the app has a parallel stack at `<app>-test.<apex>` deployed from a `test` git branch. Two pipelines, two Lambdas, two databases (when DB is enabled), two of everything per-app — fully isolated from prod.
