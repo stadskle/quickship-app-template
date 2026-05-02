@@ -138,7 +138,8 @@ echo "Want a test environment? Provisions a parallel '<app>-test' stack"
 echo "deployed from the 'test' git branch. Same capabilities as prod."
 echo "Doubles per-app resource cost. Most users say no."
 read -r -p "Test environment [y/N]: " test_env_input
-case "${test_env_input,,}" in
+test_env_input_lower=$(printf '%s' "$test_env_input" | tr '[:upper:]' '[:lower:]')
+case "$test_env_input_lower" in
   y|yes|true) test_environment_enabled="true" ;;
   *)          test_environment_enabled="false" ;;
 esac
