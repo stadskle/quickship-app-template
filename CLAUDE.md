@@ -474,8 +474,12 @@ The backend container reads creds from the mounted `~/.aws` and exercises real A
 
 When the user wants to deploy ("push it", "ship this", "deploy", or right after they confirm a change is ready), the flow is:
 
-1. **`git push`** — the pipeline triggers on the push (CodeStarSourceConnection webhook from GitLab/GitHub).
-2. **Spawn a background agent to monitor the pipeline.** The user has IAM access keys but **no AWS console access** — by platform design, there's no SSO permission set / console session for the developer IAM user. That means they cannot click into a CodePipeline view, cannot tail CloudWatch logs in the browser, cannot see anything happening server-side except via you. If you don't watch and report, they sit looking at a terminal with no signal.
+1. **Review the diff first.** Invoke the `quickship-reviewer` agent over the changed files (`git diff main...HEAD` if on a branch, otherwise `git status` + `git diff`). The reviewer covers both platform-conformance violations AND the security mistakes amateurs commonly make (IDOR, SQL injection, mass assignment, SSRF, dangerouslySetInnerHTML, hardcoded secrets, etc.). If it reports any **block-merge** findings, surface them as the headline and **do not push** until the user has either fixed them or explicitly waived (waivers go in the commit message). The user is non-technical; they cannot spot these themselves — that's the contract.
+
+   **Skip the review only when**: change is doc-only (markdown, README) with no code modifications; OR the user explicitly says "skip review" / "I've already reviewed".
+
+2. **`git push`** — the pipeline triggers on the push (CodeStarSourceConnection webhook from GitLab/GitHub).
+3. **Spawn a background agent to monitor the pipeline.** The user has IAM access keys but **no AWS console access** — by platform design, there's no SSO permission set / console session for the developer IAM user. That means they cannot click into a CodePipeline view, cannot tail CloudWatch logs in the browser, cannot see anything happening server-side except via you. If you don't watch and report, they sit looking at a terminal with no signal.
 
 Use the Agent tool with `run_in_background: true`. Sample call:
 
