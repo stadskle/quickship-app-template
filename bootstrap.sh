@@ -221,7 +221,15 @@ for t in tables:
     upper = t.upper().replace("-", "_")
     lines.append(f"      KV_TABLE_{upper}: {resource_prefix}-{t}-localdev")
 if storage_enabled:
-    lines.append(f"      STORAGE_BUCKET: {resource_prefix}-storage-{account_id}-localdev")
+    # Localdev S3 bucket: <prefix>-<app>-ld-<6char-hash>. Hash is over
+    # (account_id, region) to disambiguate within S3's global namespace
+    # while staying under the 63-char limit even at max app_name length.
+    # See modules/quickship/capabilities.tf storage_localdev for the full
+    # reasoning. DynamoDB keeps the longer `-localdev` suffix (no limit).
+    import hashlib
+    region = "$aws_region"
+    bucket_hash = hashlib.md5(f"{account_id}-{region}".encode()).hexdigest()[:6]
+    lines.append(f"      STORAGE_BUCKET: {resource_prefix}-ld-{bucket_hash}")
 
 block = "\n".join(lines) if lines else "      # (no capabilities enabled in terraform.tfvars yet — helpers use SQLite / uploads/ fallbacks)"
 
