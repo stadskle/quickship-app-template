@@ -46,9 +46,17 @@ PLATFORM_FILES_VERBATIM=(
 
 # Has __APP_NAME__ / __AWS_PROFILE__ / __AWS_REGION__ placeholders that need
 # the local app's values substituted in.
+#
+# CLAUDE.md is included so platform changes to Claude's instructions
+# propagate. Caveat: if the dev or app-Claude has added their own custom
+# sections to CLAUDE.md, --apply will clobber them. Best practice is to
+# keep custom app-specific guidance in a sibling file (e.g., CLAUDE.app.md)
+# rather than editing CLAUDE.md directly. The dry-run output makes the
+# clobber risk visible before --apply.
 PLATFORM_FILES_SUBSTITUTE=(
   scripts/initialize.sh
   scripts/destroy.sh
+  CLAUDE.md
 )
 
 # ---- args ---------------------------------------------------------------
