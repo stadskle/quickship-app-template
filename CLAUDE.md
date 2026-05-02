@@ -237,6 +237,15 @@ git push  # picks up the new env value (the platform's `data.aws_ssm_parameter` 
 
 Get the API key from [console.anthropic.com](https://console.anthropic.com/) → API Keys. A free-tier account is plenty for a single internal-tool app's volume.
 
+> ⚠️ **Claude Max/Pro and the Anthropic API are separate billing tracks.** Same login, separate wallets:
+>
+> | Product | What it bills | Where you manage it |
+> |---|---|---|
+> | Claude Max / Pro | The chat product at claude.ai + Claude Code | claude.ai → Settings |
+> | Anthropic API credits | Programmatic usage via api.anthropic.com (this helper, the SDK) | console.anthropic.com → Plans & Billing |
+>
+> Paying for Max/Pro does **not** give you API credits. If `ai_claude` returns 401/403 with a working key, the most likely cause is that the account has no API credits — top up at console.anthropic.com → Plans & Billing.
+
 ### Using `ai_claude` from code
 
 ```python
