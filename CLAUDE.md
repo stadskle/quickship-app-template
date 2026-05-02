@@ -215,7 +215,7 @@ Two helpers ship with the template, both with the same `generate(prompt)` / `cha
 | **Available models** | Whatever's published in your platform region (often a narrow set; eu-central-1 doesn't have Anthropic models on Bedrock as of 2026) | Full Claude family (Haiku / Sonnet / Opus) |
 | **Data residency** | Bound to AWS region | Anthropic API endpoint (US/global) |
 | **Billing** | AWS | Anthropic |
-| **Default model** | `eu.amazon.nova-lite-v1:0` (regional inference profile) | `claude-sonnet-4-7` |
+| **Default model** | `eu.amazon.nova-lite-v1:0` (regional inference profile) | `claude-sonnet-4-6` |
 
 Default to **`ai_claude`** unless the user has stated a constraint that forces Bedrock (in-region data residency, single-AWS-bill mandate). It avoids the entire Bedrock-quota theatre and gives access to Claude models that aren't in the platform region.
 
@@ -265,7 +265,7 @@ text = ai_claude.chat([
 text = ai_claude.generate(
     "Translate to Norwegian: ...",
     system="You translate concisely. Norwegian Bokmål.",
-    model_id="claude-haiku-4-5",  # cheaper/faster for simple tasks
+    model_id="claude-haiku-4-5-20251001",  # cheaper/faster for simple tasks
     max_tokens=200,
 )
 ```

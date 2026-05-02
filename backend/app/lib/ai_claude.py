@@ -26,7 +26,7 @@ clear runtime error. Set the real key with:
 
 …then redeploy (`git push`) so Lambda picks up the new env value.
 
-Default model is `claude-sonnet-4-7` — the latest stable mid-tier model.
+Default model is `claude-sonnet-4-6` — the latest stable mid-tier model.
 Override per call with `model_id=`.
 """
 
@@ -37,7 +37,7 @@ import os
 from fastapi import HTTPException
 
 
-_DEFAULT_MODEL = os.environ.get("CLAUDE_DEFAULT_MODEL", "claude-sonnet-4-7")
+_DEFAULT_MODEL = os.environ.get("CLAUDE_DEFAULT_MODEL", "claude-sonnet-4-6")
 
 
 def _resolve_api_key(explicit: str | None) -> str:
