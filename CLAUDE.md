@@ -589,6 +589,8 @@ When the user wants to deploy ("push it", "ship this", "deploy", or right after 
 2. **`git push`** — the pipeline triggers on the push (CodeStarSourceConnection webhook from GitLab/GitHub).
 3. **Spawn a background agent to monitor the pipeline.** The user has IAM access keys but **no AWS console access** — by platform design, there's no SSO permission set / console session for the developer IAM user. That means they cannot click into a CodePipeline view, cannot tail CloudWatch logs in the browser, cannot see anything happening server-side except via you. If you don't watch and report, they sit looking at a terminal with no signal.
 
+> ❌ **Anti-pattern: rolling your own polling script.** Don't write a `while true; do aws codepipeline get-pipeline-state ...; sleep 15; done` bash script (or `cat > /tmp/watch.sh <<EOF ...`). Don't run `aws codepipeline ...` in a loop in your turn. Both flood the user's terminal with raw status output and force them to wait through it. **Use the Agent tool with `run_in_background: true`** — the agent polls AND interprets the result (success message + URL on green; log excerpt + diagnosis on red), and Claude Code surfaces the final summary automatically when it completes.
+
 Use the Agent tool with `run_in_background: true`. Sample call:
 
 ```
