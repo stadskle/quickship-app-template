@@ -480,6 +480,83 @@ docker compose up
 
 The backend container reads creds from the mounted `~/.aws` and exercises real AWS for any capability the app declares (S3, DynamoDB, Bedrock, SSM secrets). The same role attached for debugging covers these — that's why the developer-access policy mirrors the Lambda execution role for capability resources.
 
+## Scheduled jobs
+
+When the user wants something to run on a cron — daily reports, periodic cleanup, hourly polls of an external API — use the platform's scheduled-jobs mechanism. AWS EventBridge Scheduler fires the Lambda with a special payload, and `backend/handler.py` routes those to functions in `backend/app/cron.py`.
+
+### Adding a scheduled job
+
+1. **Define the function** in `backend/app/cron.py`:
+   ```python
+   def daily_report():
+       from app.lib import db, email
+       with db.connection() as conn, conn.cursor() as cur:
+           cur.execute("SELECT count(*) FROM notes")
+           count = cur.fetchone()[0]
+       email.send(to="ops@example.com", subject="Daily report",
+                  body_text=f"{count} notes total.")
+   ```
+   - No arguments, no return value.
+   - Use the standard `app.lib.*` helpers — same as a route handler.
+   - Errors propagate. EventBridge retries 3× within 1h by default. Functions should be **idempotent** since retries can re-run partial work.
+
+2. **Add the schedule** in `infra/terraform.tfvars`:
+   ```hcl
+   cron_schedules = [
+     { name = "daily_report", expression = "cron(0 9 * * ? *)" },  # 9am UTC daily
+   ]
+   ```
+   - `name` must match the function name exactly.
+   - `expression` is AWS schedule syntax: `cron(min hour day-of-month month day-of-week year)` or `rate(1 hour)`. Note AWS cron uses `?` for "any" in day-of-month/day-of-week, and the year field is required. Time is UTC.
+
+3. **Push to main.** The orchestrator runs `terraform apply`, which creates the EventBridge Scheduler resource. The pipeline then deploys the new Lambda code with the cron function defined.
+
+### Testing locally
+
+```bash
+docker compose exec backend python -m app.cron daily_report
+```
+
+Runs the function once against your local Postgres + dev AWS creds. No schedule emulation — that'd be too noisy locally for daily/hourly jobs.
+
+### Inspecting schedules in prod
+
+```bash
+# All this app's schedules
+aws --profile __AWS_PROFILE__ scheduler list-schedules \
+  --query "Schedules[?starts_with(Name, '__AWS_PROFILE__-__APP_NAME__')]" \
+  --output table
+
+# Details + next firing time
+aws --profile __AWS_PROFILE__ scheduler get-schedule \
+  --name __AWS_PROFILE__-__APP_NAME__-daily_report
+```
+
+### Manual test-fire in prod
+
+If a job needs to be re-run out of band (e.g., it failed and you want a manual retry without waiting for the next scheduled fire):
+
+```bash
+aws --profile __AWS_PROFILE__ lambda invoke \
+  --function-name __AWS_PROFILE__-__APP_NAME__ \
+  --payload '{"_quickship_cron":"daily_report"}' \
+  --cli-binary-format raw-in-base64-out \
+  /tmp/cron-out.json
+cat /tmp/cron-out.json
+```
+
+CloudWatch Lambda logs will show the run; same logs as regular requests.
+
+### Removing a schedule
+
+Delete the entry from `cron_schedules` in tfvars and push to main. Terraform destroys the EventBridge Scheduler resource. The function definition in `app/cron.py` can stay or be removed — without a schedule it just won't fire.
+
+### Caveats / when not to use this
+
+- **Long jobs**: Lambda's `timeout_seconds` (default 25) caps each invocation. For multi-minute work, either bump the timeout (max 900) or move to a different mechanism.
+- **High frequency**: every 1 minute is fine; sub-minute isn't supported by EventBridge Scheduler. For high-frequency, consider whether the work belongs in a request handler instead.
+- **State across runs**: schedules fire and forget. If a job needs to know "where did I leave off", store cursor state in DB or DynamoDB.
+
 ## Common tasks
 
 - **Add a route**: create `backend/app/routes/<name>.py`, register in `app/main.py`. Pattern: `@router.get("/api/...")` with `Depends(current_user)`.

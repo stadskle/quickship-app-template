@@ -88,6 +88,15 @@ variable "secret_names" {
   default     = []
 }
 
+variable "cron_schedules" {
+  type = list(object({
+    name       = string
+    expression = string
+  }))
+  description = "Scheduled jobs. Each entry creates an EventBridge Scheduler rule that invokes the Lambda with `{\"_quickship_cron\":\"<name>\"}`; backend/app/cron.py routes to a function with the matching name. Expression is AWS schedule syntax: `cron(0 9 * * ? *)` (UTC; note Sunday=1 in AWS cron) or `rate(1 hour)`. See CLAUDE.md \"Scheduled jobs\"."
+  default     = []
+}
+
 # ---- Test environment (optional) -----------------------------------------
 
 variable "test_environment_enabled" {

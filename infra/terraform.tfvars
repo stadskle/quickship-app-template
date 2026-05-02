@@ -30,6 +30,16 @@ ai_models_enabled = __AI_MODELS_ENABLED__
 # Lambda env var. Set values via `aws ssm put-parameter` after first apply.
 secret_names = []
 
+# Scheduled jobs. Each entry fires the Lambda with payload
+# {"_quickship_cron": "<name>"}; the matching function in backend/app/cron.py
+# runs. Expression is AWS schedule syntax: cron() in UTC, or rate().
+# Function name in app/cron.py must match `name` exactly. See CLAUDE.md
+# "Scheduled jobs".
+# cron_schedules = [
+#   { name = "daily_report",   expression = "cron(0 9 * * ? *)" },
+#   { name = "hourly_cleanup", expression = "rate(1 hour)" },
+# ]
+
 # Lambda sizing — defaults are fine for most internal tools. Bump when:
 #   - You see CloudWatch reports of timeouts (timeout_seconds too low)
 #   - Cold starts or response times drag (memory_mb too low; CPU scales

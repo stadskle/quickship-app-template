@@ -27,6 +27,7 @@ module "app" {
   email_enabled     = var.email_enabled
   ai_models_enabled = var.ai_models_enabled
   secret_names      = var.secret_names
+  cron_schedules    = var.cron_schedules
 
   # Pipeline (CI/CD). pipeline_enabled defaults to true on the module side;
   # set explicitly here so the consumer's intent is visible.
@@ -66,6 +67,7 @@ module "app_test" {
   email_enabled     = var.email_enabled
   ai_models_enabled = var.ai_models_enabled
   secret_names      = var.secret_names
+  cron_schedules    = var.cron_schedules
 
   pipeline_enabled              = var.git_repo != ""
   git_repo                      = var.git_repo
