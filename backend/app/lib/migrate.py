@@ -25,7 +25,7 @@ are not re-executed.
 
 Statement-level features:
 - `CREATE INDEX ASYNC` / `ALTER TABLE ASYNC ... VALIDATE CONSTRAINT` return
-  a job id; the runner waits for the job (sys.wait_for_job) so the next
+  a job id; the runner waits for the job (CALL sys.wait_for_job) so the next
   statement — and the new app code — can rely on it.
 - A statement preceded by a `-- quickship:batch` comment is re-run until it
   affects 0 rows. Use it for backfills, because a DSQL transaction can
@@ -112,8 +112,12 @@ def _progress(cur) -> dict[str, tuple[str, int, object]]:
     return {r[0]: (r[1], r[2], r[3]) for r in cur.fetchall()}
 
 
-def _execute(cur, stmt: str) -> None:
-    """Run one statement in its own (autocommit) transaction."""
+def _execute(cur, stmt: str) -> str | None:
+    """Run one statement in its own (autocommit) transaction.
+
+    Returns the async job id if the statement started one (CREATE INDEX
+    ASYNC, ALTER TABLE ASYNC ... VALIDATE CONSTRAINT), else None.
+    """
     if BATCH_MARKER.search(stmt):
         total = 0
         while True:
@@ -122,17 +126,26 @@ def _execute(cur, stmt: str) -> None:
                 break
             total += cur.rowcount
         print(f"    batched: {total} rows", flush=True)
-        return
+        return None
 
     cur.execute(stmt)
-    # Async DDL returns a job id — wait so later statements can rely on it.
     if cur.description and cur.description[0].name == "job_id":
-        job_id = cur.fetchone()[0]
-        print(f"    waiting for async job {job_id}", flush=True)
-        cur.execute("SELECT sys.wait_for_job(%s)", (job_id,))
-        ok = cur.fetchone()[0]
-        if ok is False:
-            raise RuntimeError(f"async DDL job {job_id} failed — see `SELECT * FROM sys.jobs`")
+        return cur.fetchone()[0]
+    return None
+
+
+def _wait_for_job(cur, job_id: str) -> None:
+    """Block until an async DDL job finishes; raise if it failed.
+
+    sys.wait_for_job is a PROCEDURE in DSQL (CALL, not SELECT) and returns
+    one row: succeeded boolean.
+    """
+    print(f"    waiting for async job {job_id}", flush=True)
+    cur.execute("CALL sys.wait_for_job(%s)", (job_id,))
+    succeeded = cur.fetchone()[0] if cur.description else None
+    if succeeded is False:
+        cur.execute("SELECT status, details, object_name FROM sys.jobs WHERE job_id = %s", (job_id,))
+        raise RuntimeError(f"async DDL job {job_id} failed: {cur.fetchone()}")
 
 
 def _record(cur, mig: Migration, applied: int, done: bool) -> None:
@@ -175,8 +188,12 @@ def apply() -> None:
             for i, stmt in enumerate(stmts):
                 if i < applied:
                     continue  # already ran in an earlier, partially-failed attempt
-                _execute(cur, stmt)
+                job_id = _execute(cur, stmt)
+                # Record BEFORE waiting: the statement has run; re-running it
+                # after a failed wait would fail with "already exists".
                 _record(cur, mig, i + 1, done=False)
+                if job_id:
+                    _wait_for_job(cur, job_id)
             _record(cur, mig, len(stmts), done=True)
         print(f"migrate: {pending} applied, schema up to date", flush=True)
 
@@ -202,7 +219,9 @@ def rollback(*, allow_prod: bool = False) -> None:
         stmts = mig.statements(mig.rollback)
         print(f"rollback: {mig.rollback.name} ({len(stmts)} statements)")
         for stmt in stmts:
-            _execute(cur, stmt)
+            job_id = _execute(cur, stmt)
+            if job_id:
+                _wait_for_job(cur, job_id)
         cur.execute(f"DELETE FROM {TABLE} WHERE id = %s", (mig.id,))
 
 

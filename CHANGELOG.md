@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.2
+
+- `app.lib.migrate`: wait for async DDL jobs with `CALL sys.wait_for_job(...)` — it is a procedure in DSQL; `SELECT` failed on the first `CREATE INDEX ASYNC`. Progress is now recorded right after a statement runs and before the wait, so a failed wait can't make a resumed run re-execute the DDL. Verified against a real DSQL cluster.
+
 ## v2.0.1
 
 - `scripts/upgrade.sh --apply` stopped after the first non-script file it updated (a `[[ ... ]] && chmod` returned non-zero under `set -e`). It now applies every changed file in one run.
