@@ -169,14 +169,14 @@ process_file() {
     if [[ "$mode" == "apply" ]]; then
       mkdir -p "$(dirname "$f")"
       cp "$scratch" "$f"
-      [[ "$f" == scripts/* ]] && chmod +x "$f"
+      if [[ "$f" == scripts/* ]]; then chmod +x "$f"; fi
     fi
   elif ! diff -q "$f" "$scratch" >/dev/null 2>&1; then
     echo "  ~ $f"
     CHANGED+=("$f")
     if [[ "$mode" == "apply" ]]; then
       cp "$scratch" "$f"
-      [[ "$f" == scripts/* ]] && chmod +x "$f"
+      if [[ "$f" == scripts/* ]]; then chmod +x "$f"; fi
     else
       diff -u "$f" "$scratch" | sed -n '1,30p'
       echo

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- `scripts/upgrade.sh --apply` stopped after the first non-script file it updated (a `[[ ... ]] && chmod` returned non-zero under `set -e`). It now applies every changed file in one run.
+
 ## v2.0.0 — Aurora DSQL replaces Neon (BREAKING)
 
 Requires the platform at **v2.0.0** (see the platform repo's CHANGELOG for the full upgrade procedure — existing apps must be pinned to `?ref=v1.0.0` first).
