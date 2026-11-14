@@ -1,80 +1,139 @@
 """
-Postgres connection + Yoyo migration runner.
+Aurora DSQL connection helpers.
 
-Same code path runs locally (against the docker-compose Postgres) and in
-production (against Neon). The migration runner applies pending SQL files
-from `backend/migrations/` on startup; if `DATABASE_URL` is unset (database
-not enabled for this app), all functions are no-ops.
+Same code path runs locally and in production — both talk to a real Aurora
+DSQL cluster (there is no local DSQL emulator):
+
+- Production (Lambda): `DSQL_ENDPOINT` env var is set by the platform.
+  Auth uses the Lambda execution role.
+- Local (`docker compose up`): `DSQL_ENDPOINT_PARAM` points at the SSM
+  parameter holding this app's `-localdev` twin cluster endpoint. Auth uses
+  your AWS profile (`AWS_PROFILE`, mounted from ~/.aws).
+
+Auth is IAM-only: every connect generates a short-lived token via the
+aurora-dsql-python-connector. No passwords, no connection strings.
+
+If neither variable resolves to an endpoint (database not enabled for this
+app), `enabled()` is False and `connection()` raises a clear error.
+
+DSQL differences that matter in app code:
+- Optimistic concurrency: conflicting writes fail at COMMIT with SQLSTATE
+  40001 instead of waiting on a lock. Use `run_in_transaction(fn)`, which
+  retries automatically, for any read-modify-write.
+- A transaction may modify at most 3,000 rows. Batch bigger writes.
+- DDL and DML can't share a transaction. Schema changes belong in
+  migrations (see app/lib/migrate.py), never in app code.
 """
 
 from __future__ import annotations
 
+import functools
 import os
-import re
+import random
+import time
+from collections.abc import Callable
 from contextlib import contextmanager
-from pathlib import Path
+from typing import TypeVar
 
+import aurora_dsql_psycopg as dsql
 import psycopg
-from yoyo import get_backend, read_migrations
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+T = TypeVar("T")
 
-# backend/app/lib/db.py → backend/migrations/
-_MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "migrations"
-
-
-def _yoyo_url(url: str) -> str:
-    """Translate a stdlib postgres URL into yoyo's psycopg-v3 form.
-
-    yoyo's default driver for `postgresql://` is psycopg2; we install psycopg
-    (v3) only. The `postgresql+psycopg://` scheme tells yoyo to use psycopg v3.
-    psycopg.connect() itself only accepts plain `postgresql://`, so we keep
-    the original DATABASE_URL for runtime queries and only rewrite for yoyo.
-    """
-    return re.sub(r"^postgres(ql)?://", "postgresql+psycopg://", url, count=1)
+DB_USER = "admin"
+DB_NAME = "postgres"
 
 
-def apply_migrations() -> None:
-    """Apply any pending migrations. Idempotent. No-op if no DATABASE_URL."""
-    if not DATABASE_URL:
-        return
+@functools.cache
+def endpoint() -> str | None:
+    """Resolve this app's DSQL endpoint, or None if no database is enabled."""
+    direct = os.environ.get("DSQL_ENDPOINT")
+    if direct:
+        return direct
 
-    backend = get_backend(_yoyo_url(DATABASE_URL))
-    migrations = read_migrations(str(_MIGRATIONS_DIR))
-    with backend.lock():
-        backend.apply_migrations(backend.to_apply(migrations))
+    param = os.environ.get("DSQL_ENDPOINT_PARAM")
+    if not param:
+        return None
+
+    import boto3
+
+    ssm = boto3.client("ssm")
+    try:
+        return ssm.get_parameter(Name=param)["Parameter"]["Value"]
+    except ssm.exceptions.ParameterNotFound:
+        # database_enabled = false (or /initialize hasn't run yet).
+        return None
 
 
-def connection() -> psycopg.Connection:
-    """Open a new psycopg connection. Caller is responsible for closing.
+def enabled() -> bool:
+    return endpoint() is not None
 
-    Idiomatic usage (auto-closes, auto-commits or rolls back):
+
+def connection(*, autocommit: bool = False) -> psycopg.Connection:
+    """Open a new IAM-authenticated connection. Caller closes it.
 
         with db.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT now()")
                 ts = cur.fetchone()[0]
     """
-    if not DATABASE_URL:
+    host = endpoint()
+    if not host:
         raise RuntimeError(
-            "DATABASE_URL is not set. Set database_enabled = true in infra/terraform.tfvars "
-            "(or add it to docker-compose.yml's backend env vars for local dev)."
+            "No database configured. Set database_enabled = true in infra/terraform.tfvars "
+            "and run ./scripts/initialize.sh (that also creates the -localdev cluster "
+            "docker compose uses)."
         )
-    return psycopg.connect(DATABASE_URL)
+    return dsql.connect(host=host, user=DB_USER, dbname=DB_NAME, autocommit=autocommit)
 
 
 @contextmanager
 def transaction():
-    """Context manager for a transactional cursor.
+    """Transactional cursor. Commits on clean exit, rolls back on exception.
 
-    Commits on clean exit, rolls back on exception. Closes the connection
-    afterwards. Use for any multi-statement unit of work.
+    No automatic retry — if the body does a read-then-write that can race
+    with another request, use `run_in_transaction` instead.
 
         with db.transaction() as cur:
-            cur.execute("INSERT INTO notes (...) VALUES (...)")
-            cur.execute("UPDATE counters SET n = n + 1")
-            cur.fetchone()  # if you need to read a RETURNING row
+            cur.execute("INSERT INTO notes (...) VALUES (...) RETURNING id")
+            new_id = cur.fetchone()[0]
     """
     with connection() as conn:
         with conn.transaction(), conn.cursor() as cur:
             yield cur
+
+
+def is_conflict(error: BaseException) -> bool:
+    """True for DSQL optimistic-concurrency conflicts (safe to retry)."""
+    return getattr(error, "sqlstate", None) in ("40001", "OC000", "OC001")
+
+
+def run_in_transaction(fn: Callable[[psycopg.Cursor], T], *, attempts: int = 5) -> T:
+    """Run `fn(cursor)` in a transaction, retrying on OCC conflicts.
+
+    `fn` may be called more than once, so it must not have side effects
+    outside the database (no emails, no S3 writes) — do those after this
+    returns.
+
+        def bump(cur):
+            cur.execute("UPDATE counters SET n = n + 1 WHERE name = %s RETURNING n", ("hits",))
+            return cur.fetchone()[0]
+
+        n = db.run_in_transaction(bump)
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            with transaction() as cur:
+                return fn(cur)
+        except psycopg.Error as e:
+            if not is_conflict(e) or attempt == attempts:
+                raise
+            time.sleep(min(0.01 * 2**attempt, 0.5) * (1 + random.random()))
+    raise AssertionError("unreachable")
+
+
+def apply_migrations() -> None:
+    """Apply pending migrations. No-op if no database. See app/lib/migrate.py."""
+    from app.lib import migrate
+
+    migrate.apply()

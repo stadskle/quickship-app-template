@@ -1,7 +1,8 @@
 fastapi~=0.136.1
 mangum~=0.21.0
 uvicorn[standard]~=0.46.0
-psycopg[binary]~=3.3.3
-yoyo-migrations~=9.0.0
+psycopg[binary]~=3.3.9
+aurora-dsql-python-connector[psycopg]~=0.2.7
+sqlparse~=0.6.1
 boto3~=1.42.97
 anthropic~=0.97.0

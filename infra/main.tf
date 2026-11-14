@@ -1,11 +1,11 @@
-# The app itself. The quickship module reads platform facts (WAF ARN, Neon
-# project handles, Bedrock model ARNs, SES sender, CodeConnection ARN,
+# The app itself. The quickship module reads platform facts (WAF ARN,
+# Bedrock model ARNs, SES sender, CodeConnection ARN,
 # pipeline artifact bucket) from SSM internally; this consumer just sets
 # per-app config + capability flags + git repo location.
 module "app" {
-  # `?ref=main` tracks latest. Pin to a tag (e.g. `?ref=v0.3.1`) if you want
-  # stability — change here, then `terraform init -upgrade` and re-deploy.
-  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=main"
+  # Pinned to a platform release. Upgrade deliberately: read the platform
+  # CHANGELOG, bump the tag here AND in module "app_test" below, push.
+  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=v2.0.0"
 
   providers = {
     aws           = aws
@@ -47,7 +47,7 @@ module "app" {
 # `terraform.tfvars` racing main's against shared state.
 module "app_test" {
   count  = var.test_environment_enabled ? 1 : 0
-  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=main"
+  source = "git::https://__PLATFORM_SOURCE__//modules/quickship?ref=v2.0.0"
 
   providers = {
     aws           = aws

@@ -1,29 +1,14 @@
 # Local dev environment. `docker compose up` brings everything up:
-#   - postgres on :5432 with the app's database+role pre-created
-#   - backend (FastAPI/uvicorn) on :8000 with hot reload
+#   - backend (FastAPI/uvicorn) on :8000 with hot reload, talking to this
+#     app's `-localdev` Aurora DSQL cluster in AWS (DSQL has no local
+#     emulator; the twin is free when idle and isolated from prod)
 #   - frontend (Vite) on :5173 with HMR; /api/* proxies to backend
 #
 # Source code is bind-mounted from host so edits are live without rebuild.
-# node_modules and Postgres data live in named volumes (Docker-native FS,
-# not the host bind mount) so they don't slow down macOS volume mounts.
+# node_modules lives in a named volume (Docker-native FS, not the host bind
+# mount) so it doesn't slow down macOS volume mounts.
 
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: __APP_NAME__
-      POSTGRES_USER: __APP_NAME__
-      POSTGRES_PASSWORD: dev
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "__APP_NAME__"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
-
   backend:
     build: ./backend
     working_dir: /app
@@ -31,9 +16,13 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - ~/.aws:/root/.aws:ro # AWS credentials for Bedrock (real, not mocked)
+      - ~/.aws:/root/.aws:ro # AWS credentials: DSQL, Bedrock, localdev twins
     environment:
-      DATABASE_URL: postgresql://__APP_NAME__:dev@postgres:5432/__APP_NAME__
+      # Database: SSM parameter holding the -localdev DSQL cluster endpoint
+      # (created when database_enabled = true and /initialize has run).
+      # Missing parameter = no database; db.enabled() is False.
+      DSQL_ENDPOINT_PARAM: /__AWS_PROFILE__/apps/__APP_NAME__/dsql_endpoint_localdev
+      QUICKSHIP_MIGRATE_ON_STARTUP: "1"
       AWS_REGION: __AWS_REGION__
       AWS_DEFAULT_REGION: __AWS_REGION__
       AWS_PROFILE: __AWS_PROFILE__
@@ -49,9 +38,6 @@ services:
       # when unset (e.g. before /initialize ran), they fall back to local
       # SQLite / ./uploads/ for greenfield iteration.
 __CAPABILITY_ENV_VARS__
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -65,5 +51,4 @@ __CAPABILITY_ENV_VARS__
       - backend
 
 volumes:
-  pgdata:
   frontend_node_modules:

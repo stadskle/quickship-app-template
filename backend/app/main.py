@@ -4,9 +4,10 @@ FastAPI entrypoint.
 Same code runs locally (uvicorn) and in Lambda (Mangum). The `handler`
 export at the bottom is what the Lambda Function URL invokes.
 
-Yoyo migrations run on startup via the lifespan event — locally on
-container start, in production on Lambda cold start (once per container,
-fast no-op when nothing pending).
+Migrations: locally they run on container start (docker-compose sets
+QUICKSHIP_MIGRATE_ON_STARTUP=1, against the -localdev DSQL cluster). In
+production the PIPELINE runs them before deploying new code — Lambda never
+migrates (see app/lib/migrate.py).
 
 In production, the build step packs the Vite-built frontend into
 `static/` at zip root; we mount it at /static/ and add a SPA fallback
@@ -14,6 +15,7 @@ that serves index.html for any unmatched non-/api/ path so React Router
 can take over client-side routing.
 """
 
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -28,7 +30,8 @@ from app.lib.auth import User, current_user
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    db.apply_migrations()
+    if os.environ.get("QUICKSHIP_MIGRATE_ON_STARTUP") == "1":
+        db.apply_migrations()
     yield
 
 

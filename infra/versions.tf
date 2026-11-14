@@ -11,10 +11,6 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
     }
-    neon = {
-      source  = "kislerdm/neon"
-      version = "~> 0.13"
-    }
   }
 
   backend "s3" {

@@ -7,12 +7,16 @@ version: 0.2
 #      (~30s of refresh+plan with no diff). Catches console-edit drift for
 #      free, and means the developer never has to remember a separate
 #      "redeploy infra" verb when capabilities flip.
-#   2. Update the Lambda — package backend + frontend and call
+#   2. Migrate the database (when database_enabled) — apply pending SQL
+#      migrations to this env's Aurora DSQL cluster BEFORE new code ships.
+#      A failing migration fails the build; the old code keeps running.
+#   3. Update the Lambda — package backend + frontend and call
 #      `aws lambda update-function-code`.
 #
 # Image: aws/codebuild/amazonlinux2-aarch64-standard:3.0 (arm64),
 # matches Lambda Graviton arch so wheels with C extensions
-# (psycopg, cryptography) load correctly when packed into the zip.
+# (psycopg, cryptography) load correctly when packed into the zip — and so
+# the migrate step can run the packaged backend directly from build/.
 #
 # Env vars injected by the platform's quickship module:
 #   LAMBDA_FUNCTION_NAME      — target Lambda name
@@ -76,10 +80,8 @@ phases:
       - pip install --quiet --no-cache-dir -t build/ -r backend/requirements.txt
       - cp -r backend/app build/
       - cp backend/handler.py build/
-      # Yoyo migrations live alongside backend/app and run on cold start
-      # via db.apply_migrations(). Without this copy the migrations
-      # directory is dropped from the Lambda zip and queries against
-      # not-yet-migrated tables fail with UndefinedTable.
+      # Migrations sit next to app/ so `python -m app.lib.migrate` (post_build)
+      # finds them at build/migrations. Lambda itself never runs them.
       - if [ -d backend/migrations ]; then cp -r backend/migrations build/; fi
 
       # Frontend build (skipped gracefully if frontend/ absent — keeps the
@@ -104,6 +106,23 @@ phases:
 
   post_build:
     commands:
+      # post_build runs even when build failed — don't migrate or deploy then.
+      - if [ "${CODEBUILD_BUILD_SUCCEEDING}" != "1" ]; then echo "Build failed — skipping migrate + deploy"; exit 1; fi
+
+      # ---- Migrate database -------------------------------------------------
+      # Endpoint comes from SSM (not a CodeBuild env var) because on the push
+      # that first enables the database, the cluster was created moments ago
+      # by the orchestrator step above. Missing parameter = no database.
+      - |
+        DSQL_ENDPOINT=$(aws ssm get-parameter --name "/${PLATFORM_PREFIX}/apps/${APP_NAME}/dsql_endpoint" --query Parameter.Value --output text 2>/dev/null || true)
+        if [ -n "${DSQL_ENDPOINT}" ] && [ "${DSQL_ENDPOINT}" != "None" ]; then
+          echo "Migrating ${DSQL_ENDPOINT}"
+          (cd build && DSQL_ENDPOINT="${DSQL_ENDPOINT}" python3 -m app.lib.migrate apply)
+        else
+          echo "No database for ${APP_NAME} — skipping migrations"
+        fi
+
+      # ---- Deploy Lambda ----------------------------------------------------
       - echo "Deploying to Lambda ${LAMBDA_FUNCTION_NAME}"
       - aws lambda update-function-code --function-name "${LAMBDA_FUNCTION_NAME}" --zip-file fileb://app.zip --region "${AWS_REGION}" >/dev/null
       - aws lambda wait function-updated --function-name "${LAMBDA_FUNCTION_NAME}" --region "${AWS_REGION}"

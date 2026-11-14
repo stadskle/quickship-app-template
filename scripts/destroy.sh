@@ -33,7 +33,7 @@ This will tear down all cloud resources for: $APP_NAME
   - Cloudflare Access app + DNS record
   - Per-app pipeline + CodeBuild
   - IAM roles and policies
-  - Postgres database (if database_enabled)  ← all data lost
+  - Aurora DSQL clusters, prod + localdev (if database_enabled)  ← all data lost
   - S3 storage bucket and contents (if storage_enabled)  ← all files lost
   - DynamoDB tables and rows (if any)  ← all rows lost
   - SSM secrets

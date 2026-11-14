@@ -38,12 +38,3 @@ data "aws_ssm_parameter" "cloudflare_api_token" {
 provider "cloudflare" {
   api_token = data.aws_ssm_parameter.cloudflare_api_token.value
 }
-
-# Neon provider — same SSM-backed pattern.
-data "aws_ssm_parameter" "neon_api_key" {
-  name = "/${var.aws_profile}/neon/api_key"
-}
-
-provider "neon" {
-  api_key = data.aws_ssm_parameter.neon_api_key.value
-}
